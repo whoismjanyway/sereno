@@ -24,6 +24,7 @@ sereno.koplugin/
     │   ├── service.lua        KOReader glue: libarchive, documents, Trapper, LuaSocket
     │   └── dialog.lua         "Pages & readability" dialog
     ├── ui/theme.lua           ✱ design system from physical units
+    ├── reader/layout.lua      ✱ reading layouts in pt/mm → KOReader's font size and margins
     ├── home/
     │   ├── context.lua        ✱ what to show: reading / finished / start / empty
     │   ├── presenter.lua      ✱ the words on screen
@@ -54,6 +55,19 @@ Nothing is monkey-patched. Sereno can therefore sit next to other plugins: its h
 
 KOReader only adds a plugin's folder to `package.path` while `main.lua` is being loaded. Every `require("sereno/...")` therefore has to run at load time, either directly in `main.lua` or in a module `main.lua` requires. KOReader's own modules can be required lazily.
 
+## Rendering with KOReader's real widgets
+
+`tools/korender` assembles a small KOReader runtime from:
+- KOReader's `frontend/`
+- koreader-base's `ffi/`
+- koreader-fonts
+- luafilesystem, built as KOReader's lfs module
+- the system's FreeType
+
+It then draws Sereno's HomeScreen with KOReader's real Blitbuffer, Font, TextWidget, TextBoxWidget, IconWidget and ImageWidget code, and writes PNGs. The only C pieces it replaces are image decoding (nanosvg, turbojpeg, MuPDF scaling), which ImageMagick and Lua stand in for, and utf8proc case folding. CI runs it on every push, so a change in KOReader's widget API that breaks Sereno's drawing shows up there.
+
+With `KORENDER_READER=1` it also sets sample reader pages with KOReader's text renderer to compare reading layouts. crengine itself is not built, so these pages are an approximation of the reader, not a screenshot of it.
+
 ## Tests
 
 `luajit spec/run.lua` runs these specs:
@@ -65,5 +79,6 @@ KOReader only adds a plugin's folder to `package.path` while `main.lua` is being
 | `metrics_spec` | ZIP, HTML, EPUB, estimators, readability, cache and Open Library, plus real books when `SERENO_BOOKS` is set |
 | `theme_spec` | Physical sizing |
 | `home_spec` | Context, wording, and the layout on 7 screen sizes × 4 states |
+| `reader_spec` | Reading layouts: physical sizes, line-length cap, valid KOReader values |
 | `smoke_spec` | Loads `main.lua` against stubs of KOReader modules (`spec/koreader_stubs.lua`), walks every menu, shows the home screen, taps every target, opens the metrics dialog, counts a folder |
 | `l10n_spec` | Translations are complete and keep their placeholders |

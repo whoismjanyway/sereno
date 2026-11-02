@@ -24,6 +24,8 @@ local HomeScreen = require("sereno/home/homescreen")
 local Library = require("sereno/library")
 local MetricsDialog = require("sereno/metrics/dialog")
 local MetricsService = require("sereno/metrics/service")
+local ReaderLayout = require("sereno/reader/layout")
+local MetricsCache = require("sereno/metrics/cache")
 
 local DataStorage = require("datastorage")
 local Dbg = require("dbg")
@@ -459,6 +461,11 @@ function Sereno:getMainMenu()
             separator = true,
         },
         {
+            text = _("Reading layout"),
+            help_text = _("Font size, margins and line spacing for the page you read, set in points and millimetres so they look the same on every screen."),
+            sub_item_table_func = function() return self:getReadingMenu() end,
+        },
+        {
             text = _("Page counts"),
             sub_item_table_func = function() return self:getPagesMenu() end,
         },
@@ -472,6 +479,140 @@ function Sereno:getMainMenu()
             keep_menu_open = true,
             callback = function() self:showRefreshStats() end,
         },
+    }
+    return menu
+end
+
+--- Print page numbers in the reader
+
+--[[--
+Makes the reader show Sereno's page count: KOReader's own "stable page
+numbers" (a synthetic page map built by crengine) are tuned so the book
+has exactly as many pages as Sereno counted, and turned on. The footer,
+"Go to page" and the page list then use the same numbers as the home
+screen. Publisher page numbers, when the book has them, are kept unless
+`force` is set.
+]]
+function Sereno:applyPageNumbers(force)
+    local pm = self.ui.pagemap
+    if not (self.ui.document and self.ui.rolling and pm and pm.setSyntheticPagesNumber) then return false, "unsupported" end
+    if pm.has_pagemap_document_provided and not force then return false, "publisher" end
+    local metrics = MetricsService.get(self.ui.document.file)
+    local pages = metrics and MetricsCache.pageCount(metrics, self.settings:readSetting("page_method", "print"))
+    if not pages or pages < 1 then return false, "no_count" end
+    pm:setSyntheticPagesNumber(pages)
+    if not pm.use_page_labels then
+        pm.use_page_labels = true
+        pm.page_labels_cache = nil
+        self.ui.doc_settings:saveSetting("pagemap_use_page_labels", true)
+        UIManager:broadcastEvent(Event:new("UsePageLabelsUpdated"))
+    end
+    self.ui.doc_settings:saveSetting("sereno_page_numbers", pages)
+    return true, pages
+end
+
+function Sereno:onReaderReady()
+    if not self.settings:isTrue("reader_page_numbers") then return end
+    if self.ui.doc_settings and self.ui.doc_settings:readSetting("sereno_page_numbers") then return end
+    -- after the first page is on screen, so opening the book isn't slowed down
+    UIManager:scheduleIn(1, function()
+        if self.ui.document then self:applyPageNumbers(false) end
+    end)
+end
+
+--- Reading layout
+
+function Sereno:readerScreen()
+    return {
+        width = Screen:getWidth(), height = Screen:getHeight(), dpi = Screen:getDPI(),
+        scale_by_size = function(n) return Screen:scaleBySize(n) end,
+    }
+end
+
+function Sereno:layoutSummary(values)
+    local ph = values.physical
+    return T(_("%1 pt · %2 mm margins · about %3 characters a line, %4 lines a page"),
+        string.format("%.1f", ph.font_pt), string.format("%.0f", ph.side_mm), ph.chars_per_line, ph.lines_per_page)
+end
+
+--- Applies a preset to the open book, through the same events as KOReader's own bottom menu.
+function Sereno:applyReadingLayout(values)
+    local doc = self.ui.document
+    if not (doc and self.ui.rolling and doc.configurable) then
+        UIManager:show(InfoMessage:new{ text = _("Reading layouts apply to reflowable books (EPUB, FB2, MOBI…), not to PDF or comics.") })
+        return false
+    end
+    local cfg = doc.configurable
+    -- keep KOReader's own config dialog in sync, so its sliders show the new values
+    cfg.font_size = values.font_size
+    cfg.h_page_margins = { values.h_margins[1], values.h_margins[2] }
+    cfg.t_page_margin = values.t_margin
+    cfg.b_page_margin = values.b_margin
+    cfg.line_spacing = values.line_spacing
+    self.ui:handleEvent(Event:new("SetFontSize", values.font_size))
+    self.ui:handleEvent(Event:new("SetLineSpace", values.line_spacing))
+    -- all four margins in one re-layout; ReaderTypeset keeps the unscaled
+    -- values it later edits one side at a time from
+    local margins = { values.h_margins[1], values.t_margin, values.h_margins[2], values.b_margin }
+    if self.ui.typeset then self.ui.typeset.unscaled_margins = { margins[1], margins[2], margins[3], margins[4] } end
+    self.ui:handleEvent(Event:new("SetPageMargins", margins))
+    return true
+end
+
+--- Sets (or, with nil, removes) Sereno's layout as the default for new books.
+-- The user's own previous defaults are kept aside and put back on removal.
+function Sereno:setDefaultReadingLayout(values)
+    local keys = ReaderLayout.SETTING_KEYS
+    if values then
+        if not self.settings:readSetting("reading_layout") then
+            local backup = {}
+            for _i, key in ipairs(keys) do backup[key] = G_reader_settings:readSetting(key) or false end
+            self.settings:saveSetting("copt_backup", backup)
+        end
+        for key, v in pairs(ReaderLayout.defaultSettings(values)) do
+            G_reader_settings:saveSetting(key, v)
+        end
+        self.settings:saveSetting("reading_layout", values.preset)
+    else
+        local backup = self.settings:readSetting("copt_backup") or {}
+        for _i, key in ipairs(keys) do
+            if backup[key] then G_reader_settings:saveSetting(key, backup[key]) else G_reader_settings:delSetting(key) end
+        end
+        self.settings:delSetting("copt_backup")
+        self.settings:delSetting("reading_layout")
+    end
+    self.settings:flush()
+end
+
+function Sereno:getReadingMenu()
+    local screen = self:readerScreen()
+    local menu = {}
+    for _i, preset in ipairs(ReaderLayout.PRESETS) do
+        local values = ReaderLayout.compute(screen, preset.id)
+        menu[#menu + 1] = {
+            text = _(preset.name),
+            help_text = self:layoutSummary(values),
+            radio = true,
+            checked_func = function() return self.settings:readSetting("reading_layout") == preset.id end,
+            callback = function()
+                local applied = self.ui.document and self:applyReadingLayout(values)
+                self:setDefaultReadingLayout(values)
+                UIManager:show(InfoMessage:new{
+                    text = T(applied and _("%1 applied to this book and to new books.\n%2") or _("New books will open with %1.\n%2"),
+                        _(preset.name), self:layoutSummary(values)),
+                    timeout = 4,
+                })
+            end,
+        }
+    end
+    menu[#menu].separator = true
+    menu[#menu + 1] = {
+        text = _("KOReader's defaults"),
+        help_text = self:layoutSummary({ physical = ReaderLayout.describe(screen, {
+            font_size = 22, h_margin = 10, t_margin = 10, b_margin = 10, line_spacing = 100 }) }),
+        radio = true,
+        checked_func = function() return self.settings:readSetting("reading_layout") == nil end,
+        callback = function() self:setDefaultReadingLayout(nil) end,
     }
     return menu
 end
@@ -492,6 +633,17 @@ function Sereno:getPagesMenu()
             separator = method == "chars",
         }
     end
+    menu[#menu].separator = true
+    menu[#menu + 1] = {
+        text = _("Use these page numbers in the reader"),
+        help_text = _("Tunes KOReader's stable page numbers so each book has exactly the pages shown here. The status bar and Go to page then match the home screen, whatever your font settings. Books with publisher page numbers keep them."),
+        checked_func = function() return self.settings:isTrue("reader_page_numbers") end,
+        callback = function()
+            self.settings:saveSetting("reader_page_numbers", not self.settings:isTrue("reader_page_numbers"))
+            self.settings:flush()
+            if self.settings:isTrue("reader_page_numbers") and self.ui.document then self:applyPageNumbers(false) end
+        end,
+    }
     local speeds = { 180, 230, 280, 330 }
     menu[#menu + 1] = {
         text_func = function() return T(_("Reading speed: %1 words per minute"), self.settings:readSetting("wpm", 230)) end,
@@ -512,6 +664,17 @@ function Sereno:getPagesMenu()
         end,
     }
     if self.ui.document then
+        menu[#menu + 1] = {
+            text = _("This book: use these page numbers now"),
+            callback = function()
+                local ok, info = self:applyPageNumbers(true)
+                UIManager:show(InfoMessage:new{
+                    text = ok and T(_("This book now has %1 pages, as on the home screen."), info)
+                        or _("Page numbers can only be set for reflowable books (EPUB, FB2, MOBI…)."),
+                    timeout = 3,
+                })
+            end,
+        }
         menu[#menu + 1] = {
             text = _("This book: pages & readability"),
             callback = function(touchmenu_instance)

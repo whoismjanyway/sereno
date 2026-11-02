@@ -46,3 +46,20 @@ jobs:
         with:
           name: home-previews
           path: previews/*.png
+
+      # The home screen and sample reader pages drawn by KOReader's own widget
+      # code (Blitbuffer, FreeType, TextBoxWidget, IconWidget...), as a smoke
+      # test of the plugin's UI against the current KOReader.
+      - name: Render with KOReader's widgets
+        env:
+          KOREADER_DIR: ${{ github.workspace }}/../koreader
+          KORENDER_READER: "1"
+        run: |
+          sudo apt-get install -y libluajit-5.1-dev imagemagick
+          tools/korender/run.sh korender ../books
+          ls korender/*.png
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: koreader-render
+          path: korender/*.png

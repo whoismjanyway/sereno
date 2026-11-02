@@ -160,8 +160,11 @@ stub("apps/filemanager/filemanager", { instance = {
     collections = { onShowColl = function() S.fm_calls[#S.fm_calls + 1] = "collections" end },
     filesearcher = { onShowFileSearch = function() S.fm_calls[#S.fm_calls + 1] = "search" end },
 } })
+S.global = {}
 G_reader_settings = G_reader_settings or {
-    readSetting = function(_, k) if k == "home_dir" then return S.home_dir end end,
+    readSetting = function(_, k) if k == "home_dir" then return S.home_dir end return S.global[k] end,
+    saveSetting = function(_, k, v) S.global[k] = v end,
+    delSetting = function(_, k) S.global[k] = nil end,
     isTrue = function() return false end,
     nilOrTrue = function() return true end,
 }

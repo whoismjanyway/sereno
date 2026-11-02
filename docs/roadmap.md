@@ -22,6 +22,8 @@ The project is split into small, separately shippable parts. Each part below is 
   - folder counting
   - settings
 - [x] Spanish translation, translation completeness spec, CI
+- [x] Reading layouts in pt/mm, and print page numbers in the reader
+- [x] `tools/korender`: drawing with KOReader's real widgets, in CI
 
 ## Next
 
@@ -38,7 +40,7 @@ The project is split into small, separately shippable parts. Each part below is 
 | # | Part | Size |
 |---|---|---|
 | [#6](https://github.com/whoismjanyway/sereno/issues/6) | Personal reading speed from KOReader's statistics database instead of a fixed 230 wpm | M |
-| [#7](https://github.com/whoismjanyway/sereno/issues/7) | Make KOReader's own "stable page numbers" match Sereno's count. Set the book's synthetic characters per page to `chars / print pages`, so the footer shows the same page numbers as the home screen. | M |
+| [#7](https://github.com/whoismjanyway/sereno/issues/7) | ~~Make KOReader's stable page numbers match Sereno's count~~ Done in 0.2 through `ReaderPageMap:setSyntheticPagesNumber`; needs a device test | M |
 | [#8](https://github.com/whoismjanyway/sereno/issues/8) | Optional "To read" collection as a shelf source | S |
 | [#9](https://github.com/whoismjanyway/sereno/issues/9) | Physical Home key opens Sereno's home screen | S |
 

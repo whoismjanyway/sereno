@@ -4,6 +4,25 @@ return {
 
     ["%1 (%2 characters each)"] = "%1 (%2 caracteres cada una)",
     ["%1 (median of %2 editions)"] = "%1 (mediana de %2 ediciones)",
+    ["%1 applied to this book and to new books.\n%2"] = "%1 aplicado a este libro y a los libros nuevos.\n%2",
+    ["%1 pt · %2 mm margins · about %3 characters a line, %4 lines a page"] = "%1 pt · márgenes de %2 mm · unos %3 caracteres por línea, %4 líneas por página",
+    ["Airy"] = "Aireado",
+    ["Compact"] = "Compacto",
+    ["Font size, margins and line spacing for the page you read, set in points and millimetres so they look the same on every screen."] =
+        "Tamaño de letra, márgenes e interlineado de la página que lees, en puntos y milímetros para que se vean igual en cualquier pantalla.",
+    ["KOReader's defaults"] = "Valores de KOReader",
+    ["Large print"] = "Letra grande",
+    ["New books will open with %1.\n%2"] = "Los libros nuevos se abrirán con %1.\n%2",
+    ["Paperback"] = "Libro de bolsillo",
+    ["Reading layout"] = "Diseño de lectura",
+    ["Reading layouts apply to reflowable books (EPUB, FB2, MOBI…), not to PDF or comics."] =
+        "Los diseños de lectura se aplican a libros adaptables (EPUB, FB2, MOBI…), no a PDF ni cómics.",
+    ["Use these page numbers in the reader"] = "Usar estos números de página al leer",
+    ["Tunes KOReader's stable page numbers so each book has exactly the pages shown here. The status bar and Go to page then match the home screen, whatever your font settings. Books with publisher page numbers keep them."] =
+        "Ajusta los números de página estables de KOReader para que cada libro tenga exactamente las páginas indicadas aquí. La barra de estado e Ir a la página coinciden así con la pantalla de inicio, sea cual sea tu configuración de letra. Los libros con números de página del editor los conservan.",
+    ["This book: use these page numbers now"] = "Este libro: usar estos números de página ahora",
+    ["This book now has %1 pages, as on the home screen."] = "Este libro tiene ahora %1 páginas, como en la pantalla de inicio.",
+    ["Page numbers can only be set for reflowable books (EPUB, FB2, MOBI…)."] = "Los números de página solo se pueden ajustar en libros adaptables (EPUB, FB2, MOBI…).",
     ["%1 left"] = "Quedan %1",
     ["%1 of reading"] = "%1 de lectura",
     ["%1 pages"] = "%1 páginas",

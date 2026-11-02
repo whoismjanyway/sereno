@@ -35,6 +35,7 @@ function Msgids.collect()
         "Print model (Sereno)", "Printed edition (Open Library)", "Calibre APNX estimate",
         "Adobe Digital Editions", "Characters per page" }
     for _, v in ipairs(labels) do add(v) end
+    for _, p in ipairs(require("sereno/reader/layout").PRESETS) do add(p.name) end
     table.sort(list)
     return list
 end

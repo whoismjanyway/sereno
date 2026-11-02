@@ -133,11 +133,25 @@ function HomeScreen:textWidget(i, node)
     local style = self.theme.type[node.style]
     local face = self:face(node.style)
     local color = INK[node.color] or INK.text
-    if (node.max_lines or 1) <= 1 then
+    local single = (node.max_lines or 1) <= 1
+    local text = node.text
+    if not single then
+        -- TextBoxWidget breaks a word that is wider than the box in the middle
+        -- ("Frankenstei / n"); shorten such a word with an ellipsis instead
+        text = text:gsub("%S+", function(word)
+            if self.theme.measure_width(word, node.style) <= node.w then return word end
+            local cut = word
+            repeat
+                cut = cut:gsub("[%z\1-\127\192-\255][\128-\191]*$", "")
+            until cut == "" or self.theme.measure_width(cut .. "…", node.style) <= node.w
+            return cut .. "…"
+        end)
+    end
+    if single then
         w = TextWidget:new{ text = node.text, face = face, max_width = node.w, fgcolor = color, padding = 0 }
     else
         w = TextBoxWidget:new{
-            text = node.text, face = face, width = node.w, height = node.h,
+            text = text, face = face, width = node.w, height = node.h,
             height_overflow_show_ellipsis = true, alignment = node.align or "left",
             fgcolor = color, bgcolor = INK.paper,
             line_height = math.max(0, style.line / face.size - 1),

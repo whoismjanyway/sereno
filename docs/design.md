@@ -48,6 +48,19 @@ The home screen answers one question first, "where was I?", and then offers a fe
 | Start | The newest unread book | "Up next" |
 | Empty | A short note on how to add books | — |
 
+## The page you read
+
+The reader has the same problem as the interface. KOReader stores the font size and margins in relative pixels (`Screen:scaleBySize`). With the defaults (font 22, margins 10), text is set at 9.5 pt with 1.5 mm side margins on a 6" Kindle, and at 16.6 pt with 2.6 mm margins on a Kindle Scribe.
+
+`sereno/reader/layout.lua` defines layouts physically:
+- **Text size:** in points, from the screen diagonal.
+- **Margins:** in millimetres.
+- **Line length:** a maximum number of characters per line, about 0.47 em per character for a serif face. The margins grow rather than let lines run long.
+
+It converts these back to KOReader's units for the screen at hand. Applying a layout changes the open book through KOReader's own events (`SetFontSize`, `SetLineSpace`, `SetPageMargins`), with the config dialog's values updated. It becomes the default for new books through KOReader's own `copt_*` settings, after keeping the user's previous defaults aside.
+
+![KOReader's default reader layout vs Sereno Paperback](images/design/reader-margins.png)
+
 ## The pieces
 
 The design takes the structure that works in modern reading apps and translates it for e-ink:

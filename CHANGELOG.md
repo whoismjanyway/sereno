@@ -3,6 +3,9 @@
 ## 0.2.0 (2026-11-02)
 
 ### Added
+- **Reading layouts:** Compact, Paperback, Airy and Large print are defined in points, millimetres and a maximum line length. They apply to the open book through KOReader's own events and become the default for new books. The user's previous defaults are kept and can be restored.
+- **Print page numbers in the reader:** KOReader's stable page numbers are tuned to Sereno's page count, so the status bar and *Go to page* match the home screen. Publisher page numbers are kept.
+- **`tools/korender`:** draws the home screen, and sample reader pages, with KOReader's real widget code. It runs in CI.
 - **Redesigned home screen:**
   - A greeting header.
   - The current book in a card, with its real cover and fact chips.
@@ -27,6 +30,9 @@
 
 ### Changed
 - Margins are rounded up, so they are never under 6 mm.
+
+### Fixed
+- **Shelf captions:** a word wider than its caption, such as "Frankenstein" on a 6" screen, is now shortened with an ellipsis. KOReader's text box used to break it mid-word ("Frankenstei / n"). Found by rendering with KOReader's real widgets.
 - Strings are now English, with a plugin-local translation layer.
 - The Sereno menu is reorganised: Home screen, Page counts, Tiered menus, Refresh budget.
 

@@ -171,6 +171,60 @@ test("the reader asks for the home screen after closing a book", function()
     truthy(#S.shown > before and S.shown[#S.shown].name == "sereno_home", "home shown")
 end)
 
+H.describe("plugin smoke test: reading layout")
+
+test("a preset applies to the open book and becomes the default", function()
+    local ui = newUI("reader")
+    ui.rolling = {}
+    ui.typeset = {}
+    ui.document.configurable = {}
+    local events = {}
+    ui.handleEvent = function(_self, e) events[#events + 1] = e end
+    local p = Sereno:new{ ui = ui }
+    S.global.copt_font_size = 30 -- the user's own default, to be kept aside
+    local menu = p:getReadingMenu()
+    walk(menu, 0)
+    menu[2].callback() -- Paperback
+    local names = {}
+    for _i, e in ipairs(events) do names[#names + 1] = e.name end
+    eq(table.concat(names, ","), "SetFontSize,SetLineSpace,SetPageMargins")
+    truthy(ui.document.configurable.font_size and ui.document.configurable.h_page_margins, "config dialog values updated")
+    eq(#events[3].args[1], 4, "four margins in one event")
+    truthy(S.global.copt_font_size ~= 30 and S.global.copt_h_page_margins, "new default saved")
+    eq(p.settings:readSetting("reading_layout"), "paperback")
+    menu[#menu].callback() -- back to the user's previous defaults
+    eq(S.global.copt_font_size, 30, "previous default restored")
+    eq(S.global.copt_h_page_margins, nil)
+end)
+
+test("the reader can use Sereno's page count as its page numbers", function()
+    local dir = S.settings_dir .. "/books"
+    local ui = newUI("reader")
+    ui.document.file = dir .. "/novel.epub"
+    ui.rolling = {}
+    local built
+    ui.pagemap = { setSyntheticPagesNumber = function(_self, n) built = n end }
+    local ds = {}
+    ui.doc_settings = { saveSetting = function(_, k, v) ds[k] = v end, readSetting = function(_, k) return ds[k] end }
+    local p = Sereno:new{ ui = ui }
+    local ok, pages = p:applyPageNumbers(false)
+    truthy(ok, tostring(pages))
+    eq(built, pages)
+    eq(ui.pagemap.use_page_labels, true)
+    eq(ds.sereno_page_numbers, pages)
+    ui.pagemap.has_pagemap_document_provided = true
+    eq(p:applyPageNumbers(false), false, "publisher numbers are kept")
+    walk(p:getPagesMenu(), 0)
+end)
+
+test("PDFs are left alone", function()
+    local ui = newUI("reader")
+    ui.document.configurable = {}
+    local p = Sereno:new{ ui = ui }
+    local values = require("sereno/reader/layout").compute({ width = 1072, height = 1448, dpi = 300 }, "paperback")
+    eq(p:applyReadingLayout(values), false)
+end)
+
 H.describe("plugin smoke test: undo")
 test("the user's own order file survives enable/disable", function()
     local p = Sereno:new{ ui = newUI("filemanager") }

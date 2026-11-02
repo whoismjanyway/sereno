@@ -12,6 +12,10 @@ Sereno is a KOReader plugin with three parts:
 
 ![The same home screen on a 6" Kindle, a Kindle Scribe and a colour screen](docs/images/devices.png)
 
+![The home screen drawn by KOReader's own widget code on a Paperwhite, a 6" Kindle and a Scribe](docs/images/real-devices.png)
+
+*The last row is not a mock-up. `tools/korender` draws it with KOReader's own blitbuffer, FreeType fonts, TextBoxWidget and IconWidget, and Sereno's HomeScreen widget.*
+
 *Previews rendered by `tools/preview.lua`: a Kindle Paperwhite 5 (top), then a 6" Kindle, a Kindle Scribe and a colour e-ink screen. The covers are the real ones, taken out of each EPUB by Sereno's own reader, from [Standard Ebooks](https://standardebooks.org) editions.*
 
 **What's on the screen**, from top to bottom:
@@ -73,6 +77,42 @@ The overlay below is drawn on the real home screen, on a Kindle Paperwhite and o
 
 To make these images yourself, run `luajit tools/specimen.lua out/`. For the overlays, run `SERENO_PREVIEW_GRID=1 luajit tools/preview.lua out/ books/`. There is more in [docs/design.md](docs/design.md).
 
+## The page you read
+
+KOReader sets the reader's font size and margins in "relative pixels" that grow with the screen's pixel count. With its defaults:
+
+| Device | Text | Side margins |
+|---|---|---|
+| 6" Kindle | 9.5 pt | 1.5 mm |
+| Paperwhite 5 | 11 pt | 1.8 mm |
+| Kindle Scribe | 16.6 pt | 2.6 mm |
+
+So the text changes size from device to device, and the margins stay a hair wide everywhere.
+
+**Settings → Sereno → Reading layout** offers four layouts defined in points and millimetres, converted to KOReader's units for your screen:
+
+| Layout | Text | Side margins | Line length | Line spacing |
+|---|---|---|---|---|
+| Compact | base − 0.5 pt | 4 mm | ≤ 75 characters | 100 % |
+| **Paperback** | base | 6 mm | ≤ 68 characters | 110 % |
+| Airy | base + 0.5 pt | 9 mm | ≤ 60 characters | 125 % |
+| Large print | base + 4 pt | 6 mm | ≤ 50 characters | 115 % |
+
+The base size depends on the screen: 10 pt on 6", 10.5 pt on 7", 11.5 pt on 8", 12.5 pt on larger screens. When a line would run longer than the layout's limit, the margins grow instead.
+
+How a layout is applied:
+- **Open book:** it changes immediately, through the same events as KOReader's own bottom menu, so KOReader's sliders show the new values.
+- **New books:** they open with it, through KOReader's own default settings.
+- **Going back:** choosing *KOReader's defaults* restores whatever defaults you had before.
+
+The first page of *The Great Gatsby* at real size, KOReader's defaults next to Sereno's *Paperback* (margins shaded):
+
+![KOReader's default reader layout vs Sereno Paperback, on three devices at real size](docs/images/design/reader-margins.png)
+
+*Text set with KOReader's own font renderer by `tools/korender`. KOReader lays out books with crengine, which also hyphenates, so its line breaks differ a little. The status bar is not shown.*
+
+**Page numbers that match.** Turn on *Page counts → Use these page numbers in the reader*. Sereno then tunes KOReader's own stable page numbers so each book has exactly the pages shown on the home screen. The status bar and *Go to page* use the same numbers, whatever your font settings. Books with publisher page numbers keep them.
+
 ## Page counts
 
 KOReader numbers pages as they are laid out on your screen. Change the font size and *page 120 of 340* becomes *page 180 of 512*. Its synthetic page map, which cuts the text every 1500 characters, is stable but only exists once a book has been opened.
@@ -118,7 +158,10 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
 
 Covers come from KOReader's CoverBrowser cache when that plugin is on. Otherwise Sereno renders the cover image stored inside the EPUB itself, keeping at most 16 in memory. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
 
-> **Status:** 0.2, early. Everything is covered by tests run on LuaJIT with KOReader stubs, and by layout previews for several devices, but **it has not yet been tried on a real device**. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
+> **Status:** 0.2, early. **It has not yet been tried on a real device.** What has been checked:
+> - **Specs:** run on LuaJIT with stubs of KOReader's modules.
+> - **Real widget code:** the home screen is also drawn by KOReader's own code (blitbuffer, FreeType fonts, TextBoxWidget, IconWidget) on every CI run, with `tools/korender`.
+> - **Previews:** layout previews for several devices. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Develop
 
@@ -127,6 +170,7 @@ git clone --depth 1 https://github.com/koreader/koreader.git ../koreader   # opt
 KOREADER_DIR=../koreader luajit spec/run.lua                               # all specs
 luajit tools/count.lua path/to/book.epub                                   # page counts from the command line
 luajit tools/preview.lua previews && rsvg-convert -o p.png previews/paperwhite-reading.svg
+KORENDER_READER=1 tools/korender/run.sh out/ books/                       # draw with KOReader's real widgets
 ```
 
 - **Code layout:** [docs/architecture.md](docs/architecture.md)
