@@ -35,6 +35,8 @@ jobs:
           done
 
       - name: Render home screen previews
+        env:
+          KOREADER_DIR: ../koreader
         run: |
           sudo apt-get install -y librsvg2-bin
           luajit tools/preview.lua previews ../books
