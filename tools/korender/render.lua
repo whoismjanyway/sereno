@@ -312,7 +312,7 @@ end
 -- Reader pages: the opening page of a book set like crengine sets it
 -- (tools/korender/bookpage.lua: crengine's hyphenation patterns, justified
 -- lines, first-line indents, the font's own line height), once with
--- KOReader's default layout and once with Sereno's "Paperback", plus the
+-- KOReader's default layout and once with Sereno's "Normal" page, plus the
 -- "Text & page" panel over the page. crengine itself is a C++ engine not
 -- built here, so line endings can differ a little from a device.
 if os.getenv("KORENDER_READER") == "1" and books_dir then
@@ -354,7 +354,7 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
             -- KOReader's status bar: DMINIBAR_CONTAINER_HEIGHT (14) and a 14 px font, both scaled
             local footer_px = math.ceil(14 * f)
             screen.footer_px = footer_px
-            local sereno = ReaderLayout.compute(screen, "paperback")
+            local sereno = ReaderLayout.compute(screen, "normal")
             local cases = {
                 { id = "koreader", align = "justify",
                   v = { font_size = 22, h_margin = 10, t_margin = 10, b_margin = 10, line_spacing = 100 } },
@@ -368,9 +368,9 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                   v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
                         b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
             }
-            -- every preset, on the Paperwhite only
+            -- the three pages (Compact, Normal, Roomy), on the Paperwhite only
             if d.id == "paperwhite" then
-                for _j, p in ipairs(ReaderLayout.PRESETS) do
+                for _j, p in ipairs(ReaderLayout.PAGES) do
                     local pv = ReaderLayout.compute(screen, p.id)
                     cases[#cases + 1] = { id = "preset-" .. p.id, align = pv.align,
                         v = { font_size = pv.font_size, h_margin = pv.h_margins[1], t_margin = pv.t_margin,
@@ -409,7 +409,12 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                     painter:free()
                 end
                 if c.panel then
-                    local panel = PanelWidget:new{ values = sereno, translate = _ }
+                    sereno.font = "Noto Serif"
+                    local panel = PanelWidget:new{ values = sereno, translate = _, fonts = {
+                        { name = "Noto Serif", file = "fonts/noto/NotoSerif-Regular.ttf" },
+                        { name = "FreeSerif", file = "fonts/freefont/FreeSerif.ttf" },
+                        { name = "Noto Sans", file = "fonts/noto/NotoSans-Regular.ttf" },
+                    } }
                     panel:paintTo(bb, 0, 0)
                     panel:onCloseWidget()
                 end

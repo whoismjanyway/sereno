@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Puts tools/korender's reader renders into device frames, side by side,
-for the README: KOReader's default page next to Sereno's Paperback on each
+for the README: KOReader's default page next to Sereno's Normal page on each
 device, and the Text & page panel.
 
     python3 tools/korender/compose.py <korender_out_dir> <images_dir> <fonts_dir>
@@ -76,7 +76,7 @@ def stack(rows, labels, gap=70, pad=50):
 
 def stats(device, case):
     # the render log line is not kept, so describe the layout from the file name
-    return {"koreader": "font 22 · margins 10 (KOReader's defaults)", "sereno": "Paperback", "panel": "Text & page panel"}[case]
+    return {"koreader": "font 22 · margins 10 (KOReader's defaults)", "sereno": "Normal", "panel": "Text panel"}[case]
 
 
 def info(device, case):
@@ -90,7 +90,7 @@ rows, labels = [], []
 for dev, name, _dpi in DEVICES:
     a, b = (os.path.join(src, f"reader-{dev}-{c}.png") for c in ("koreader", "sereno"))
     if os.path.exists(a) and os.path.exists(b):
-        rows.append(row([framed(a, "KOReader default", info(dev, "koreader")), framed(b, "Sereno Paperback", info(dev, "sereno"))]))
+        rows.append(row([framed(a, "KOReader default", info(dev, "koreader")), framed(b, "Sereno", info(dev, "sereno"))]))
         labels.append(name)
 if rows:
     # two pairs per line: 6" and Paperwhite, then the Scribe
@@ -107,7 +107,7 @@ if panels:
         x += p.width + 50
     out.save(os.path.join(dst, "reader-panel.png"), optimize=True)
 
-presets = [("compact", "Compact"), ("paperback", "Paperback"), ("airy", "Airy"), ("large", "Large print")]
+presets = [("compact", "Compact"), ("normal", "Normal"), ("roomy", "Roomy")]
 tiles = [framed(os.path.join(src, f"reader-paperwhite-preset-{pid}.png"), name, info("paperwhite", f"preset-{pid}"))
          for pid, name in presets if os.path.exists(os.path.join(src, f"reader-paperwhite-preset-{pid}.png"))]
 if tiles:
@@ -118,7 +118,7 @@ if tiles:
 
 pw = os.path.join(src, "reader-paperwhite-sereno.png")
 if os.path.exists(pw):
-    framed(pw, "Sereno Paperback on a Kindle Paperwhite", info("paperwhite", "sereno")).save(
+    framed(pw, "Sereno on a Kindle Paperwhite", info("paperwhite", "sereno")).save(
         os.path.join(dst, "reader-paperwhite.png"), optimize=True)
 # the whole shell on each device: home, library, quick controls, the reader's bars
 for dev, name, _dpi in DEVICES:

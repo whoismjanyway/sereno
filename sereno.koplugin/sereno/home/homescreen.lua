@@ -197,6 +197,23 @@ function HomeScreen:onSwipe(_arg, ges)
     return true
 end
 
+--- Rotation (from the quick controls, or a gesture): redo the layout for the new shape.
+function HomeScreen:onSetDimensions(dimen)
+    local w, h = Screen:getWidth(), Screen:getHeight()
+    if self.theme and self.theme.width == w and self.theme.height == h then return end
+    self.dimen = Geom:new{ x = 0, y = 0, w = w, h = h }
+    self.theme = Theme.new{ width = w, height = h, dpi = Screen:getDPI(),
+        scale_by_size = function(n) return Screen:scaleBySize(n) end }
+    self.painter:free()
+    self.painter = Painter.new(self.theme, self.sources and self.sources.cover)
+    if self.ges_events then
+        for _name, ranges in pairs(self.ges_events) do ranges[1].range = self.dimen end
+    end
+    self:build()
+    UIManager:setDirty(self, "full")
+end
+HomeScreen.onScreenResize = HomeScreen.onSetDimensions
+
 function HomeScreen:onClose()
     UIManager:close(self)
     return true

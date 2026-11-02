@@ -1,14 +1,10 @@
 --[[--
-The "Text & page" panel: a bottom sheet in the reader, in the spirit of the
-Kindle's "Aa" panel. Every choice is a picture of a page, so it can be
-judged at a glance and tapped with a thumb:
+The "Text" panel: a bottom sheet in the reader, like the Kindle's "Aa"
+panel, with only what you change while reading:
 
-  Layout       Compact · Paperback · Airy · Large print
-  Text size    A− [ 10.5 pt · about 50 characters a line ] A+
-  Spacing      three pages with tight, normal and loose lines
-  Margins      three pages with narrow, normal and wide margins
-  Alignment    justified or ragged-right lines
-  Paragraphs   book style (indents, no gaps) or the publisher's own
+  Font   up to four fonts, each written in its own typeface
+  Size   A− [ 10.5 pt · about 50 characters a line ] A+
+  Page   Compact, Normal, Roomy: three pictures of a page
 
 Pure Lua: lays the panel out as positioned nodes, in screen coordinates,
 for sereno/reader/panelwidget.lua (KOReader) and the renderers in tools/.
@@ -75,43 +71,23 @@ end
 @tparam table t sereno/ui/theme for the screen
 @tparam table values sereno/reader/layout.compute() result for the current spec
 @tparam function _ translate
+@tparam table fonts { {name, file}... } offered as tiles (at most 4), may be empty
 @treturn table nodes, number panel_y (top edge of the sheet)
 ]]
-function Panel.layout(t, values, _)
+function Panel.layout(t, values, _, fonts)
     _ = _ or function(s) return s end
+    fonts = fonts or {}
     local spec, ph = values.spec, values.physical
     local nodes = {}
     local m = t.margin
-    -- short screens (6" and smaller) get a tighter rhythm: 2 units instead of 3
-    local gap_v = t.height_mm < 135 and t:space(2) or t:space(3)
     local w = t.width - 2 * m
-    local col_gap = t.gutter * 2
-    -- the four groups of pages sit in a 2 × 2 grid, or in one row when the
-    -- screen is wide enough (landscape)
-    local cols = (t.landscape or (w - 3 * col_gap) / 4 >= t:mm(30)) and 4 or 2
-    local rows = 4 / cols
-    local col_w = math.floor((w - (cols - 1) * col_gap) / cols)
-    local icon_w = math.min(math.floor(t:mm(10)), math.floor((col_w - 2 * t:space(2)) / 3))
-    local icon_h = math.floor(icon_w * 4 / 3 + 0.5)
-    -- the sheet takes at most ~70 % of the screen, so the page stays in view:
-    -- everything but the two rows of pages is fixed, the pages shrink to fit
-    local btn = t.touch + (t.height_mm < 135 and 0 or t:space(2))
-    local fixed = t:space(1) + t.touch + t:space(1) + gap_v -- header
-        + t.touch + gap_v                              -- layouts
-        + btn + gap_v                                  -- text size
-        + rows * (t.type.label.line + t:space(1) + t:space(1) + t.type.micro.line + gap_v)
-        + t:space(2) + t.type.micro.line + gap_v       -- summary
-    local room = math.floor((t.height * 0.7 - fixed) / rows)
-    if icon_h > room then
-        icon_h = math.max(math.floor(t:mm(6)), room)
-        icon_w = math.min(icon_w, math.floor(icon_h * 3 / 4 + 0.5))
-    end
+    local gap_v = t.height_mm < 135 and t:space(2) or t:space(3)
 
     -- laid out from y = 0, then moved to the bottom of the screen
     local y = t:space(1)
     local header_h = t.touch
-    textNode(nodes, t, { id = "title", x = m, y = y + math.floor((header_h - t.type.title.line) / 2), w = w / 2,
-        text = _("Text & page"), style = "title" })
+    textNode(nodes, t, { id = "title", x = m, y = y + math.floor((header_h - t.type.title.line) / 2), w = math.floor(w / 2),
+        text = _("Text"), style = "title" })
     textNode(nodes, t, { id = "close", x = t.width - m - t.touch, y = y + math.floor((header_h - t.type.title.line) / 2),
         w = t.touch, text = "✕", style = "title", align = "right" })
     tap(nodes, t.width - m - t.touch * 1.5, y, t.touch * 1.5 + m, header_h, { type = "close" })
@@ -119,31 +95,36 @@ function Panel.layout(t, values, _)
     nodes[#nodes + 1] = { kind = "rule", id = "header_rule", x = 0, y = y, w = t.width, h = t.hairline, color = "hairline" }
     y = y + gap_v
 
-    -- presets as a segmented control
-    local seg_h = t.touch
-    local n = #ReaderLayout.PRESETS
-    local seg_w = math.floor(w / n)
-    nodes[#nodes + 1] = { kind = "box", id = "presets", x = m, y = y, w = seg_w * n, h = seg_h, border = "text",
-        bw = t.hairline, radius = math.floor(t:mm(1.5)) }
-    for i, p in ipairs(ReaderLayout.PRESETS) do
-        local sx = m + (i - 1) * seg_w
-        local selected = values.preset == p.id
-        if selected then
-            nodes[#nodes + 1] = { kind = "box", id = "preset_sel_" .. p.id, x = sx, y = y, w = seg_w, h = seg_h, fill = "text",
-                radius = math.floor(t:mm(1.5)) }
-        elseif i > 1 then
-            nodes[#nodes + 1] = { kind = "rule", id = "preset_div_" .. p.id, x = sx, y = y + t:space(1), w = t.hairline,
-                h = seg_h - t:space(2), color = "hairline" }
+    -- 1. Font: each choice written in its own typeface
+    if #fonts > 0 then
+        textNode(nodes, t, { id = "label_font", x = m, y = y, w = w, text = _("Font"), style = "label" })
+        y = y + t.type.label.line + t:space(1)
+        local n = math.min(4, #fonts)
+        local gap = t:space(2)
+        local fw = math.floor((w - (n - 1) * gap) / n)
+        local fh = t.touch + t.type.micro.line + t:space(2)
+        for i = 1, n do
+            local f = fonts[i]
+            local fx = m + (i - 1) * (fw + gap)
+            local selected = f.name == values.font or f.selected
+            nodes[#nodes + 1] = { kind = "box", id = "font_box_" .. i, x = fx, y = y, w = fw, h = fh, border = "text",
+                bw = selected and math.max(3, t.hairline * 3) or t.hairline, radius = math.floor(t:mm(1.5)) }
+            textNode(nodes, t, { id = "font_sample_" .. i, x = fx + t:space(1), y = y + t:space(1), w = fw - t:space(2),
+                h = t.touch - t:space(1), text = "Aa", style = "title", align = "center", font_file = f.file })
+            textNode(nodes, t, { id = "font_name_" .. i, x = fx + t:space(1), y = y + t.touch, w = fw - t:space(2),
+                text = f.name, style = selected and "micro_bold" or "micro", align = "center" })
+            tap(nodes, fx, y, fw, fh, { type = "set", key = "font", value = f.name })
         end
-        local label = _(p.name)
-        local style = textWidth(t, label, "caption") <= seg_w - t:space(2) and "caption" or "micro"
-        textNode(nodes, t, { id = "preset_" .. p.id, x = sx + t:space(1), y = y + math.floor((seg_h - t.type[style].line) / 2),
-            w = seg_w - t:space(2), text = label, style = style, align = "center", color = selected and "paper" or "text" })
-        tap(nodes, sx, y, seg_w, seg_h, { type = "preset", id = p.id })
+        y = y + fh + gap_v
     end
-    y = y + seg_h + gap_v
 
-    -- text size: small A, the size, big A
+    -- 2. Size: small A, the size, big A. On landscape screens, Size and Page
+    -- share one row, so the sheet stays short.
+    local full_w, size_top = w, y
+    if t.landscape then w = math.floor((full_w - t.gutter * 2) / 2) end
+    textNode(nodes, t, { id = "label_size", x = m, y = y, w = w, text = _("Size"), style = "label" })
+    y = y + t.type.label.line + t:space(1)
+    local btn = t.touch
     nodes[#nodes + 1] = { kind = "box", id = "size_down_box", x = m, y = y, w = btn, h = btn, border = "text", bw = t.hairline,
         radius = math.floor(btn / 2) }
     textNode(nodes, t, { id = "size_down", x = m, y = y + math.floor((btn - t.type.caption.line) / 2), w = btn, text = "A",
@@ -154,54 +135,48 @@ function Panel.layout(t, values, _)
         style = "title", align = "center" })
     local mid_x, mid_w = m + btn + t:space(2), w - 2 * btn - t:space(4)
     local pt_text = string.format("%s pt", (string.format("%.1f", ph.font_pt):gsub("%.0$", "")))
-    textNode(nodes, t, { id = "size_value", x = mid_x, y = y + math.floor((btn - t.type.title.line - t.type.micro.line) / 2),
-        w = mid_w, text = pt_text, style = "title", align = "center" })
-    textNode(nodes, t, { id = "size_detail", x = mid_x,
-        y = y + math.floor((btn - t.type.title.line - t.type.micro.line) / 2) + t.type.title.line, w = mid_w,
+    -- the value and its detail may be taller than the buttons on small screens
+    local row_h = math.max(btn, t.type.title.line + t.type.micro.line)
+    local by = y + math.floor((row_h - btn) / 2)
+    for _i, node in ipairs(nodes) do
+        if node.id == "size_down_box" or node.id == "size_up_box" or node.id == "size_down" or node.id == "size_up" then
+            node.y = node.y + (by - y)
+        end
+    end
+    local vy = y + math.floor((row_h - t.type.title.line - t.type.micro.line) / 2)
+    textNode(nodes, t, { id = "size_value", x = mid_x, y = vy, w = mid_w, text = pt_text, style = "title", align = "center" })
+    textNode(nodes, t, { id = "size_detail", x = mid_x, y = vy + t.type.title.line, w = mid_w,
         text = string.format(_("about %d characters a line"), ph.chars_per_line), style = "micro", color = "secondary",
         align = "center" })
-    tap(nodes, m, y, btn + t:space(1), btn, { type = "size", delta = -ReaderLayout.STEP })
-    tap(nodes, m + w - btn - t:space(1), y, btn + t:space(1), btn, { type = "size", delta = ReaderLayout.STEP })
-    y = y + btn + gap_v
+    tap(nodes, m, y, btn + t:space(1), row_h, { type = "size", delta = -ReaderLayout.STEP })
+    tap(nodes, m + w - btn - t:space(1), y, btn + t:space(1), row_h, { type = "size", delta = ReaderLayout.STEP })
+    y = y + row_h + gap_v
+    local page_x = m
+    if t.landscape then
+        page_x, y = m + w + t.gutter * 2, size_top
+    end
 
-    local function options(key, list, page_of, caption_of)
-        local out = {}
-        for _i, o in ipairs(list) do
-            out[#out + 1] = { key = key, value = o.id, selected = spec[key] == o.id, page = page_of(o), caption = caption_of(o) }
-        end
-        return out
+    -- 3. Page: three pictures of a page, margins and spacing together
+    local page_now = ReaderLayout.page(spec.page)
+    local icon_w = math.floor(math.min(t:mm(10), (w - 4 * t:space(4)) / 3))
+    if t.landscape then icon_w = math.floor(math.min(icon_w, t:mm(7))) end
+    local icon_h = math.floor(icon_w * 4 / 3 + 0.5)
+    local options = {}
+    for _i, p in ipairs(ReaderLayout.PAGES) do
+        options[#options + 1] = {
+            key = "page", value = p.id, selected = p.id == page_now.id, caption = _(p.name),
+            page = { margin = Panel.MARGIN_SIZE[p.margins], gap = Panel.SPACING_GAP[p.spacing],
+                align = spec.align, paragraphs = spec.book_style ~= false and "book" or "publisher" },
+        }
     end
-    local base_page = { margin = Panel.MARGIN_SIZE[spec.margins], gap = Panel.SPACING_GAP[spec.spacing],
-        align = spec.align, paragraphs = spec.book_style ~= false and "book" or "publisher" }
-    local function page(over)
-        local p = {}
-        for k, v in pairs(base_page) do p[k] = v end
-        for k, v in pairs(over) do p[k] = v end
-        return p
-    end
-    local name = function(o) return _(o.name) end
-    local para = {}
-    for _i, st in ipairs({ { id = true, key = "book", name = "Book" }, { id = false, key = "publisher", name = "Publisher" } }) do
-        para[#para + 1] = { key = "book_style", value = st.id, selected = (spec.book_style ~= false) == st.id,
-            page = page{ paragraphs = st.key }, caption = _(st.name) }
-    end
-    local groups = {
-        { id = "spacing", text = _("Spacing"),
-          options = options("spacing", ReaderLayout.SPACING, function(o) return page{ gap = Panel.SPACING_GAP[o.id] } end, name) },
-        { id = "margins", text = _("Margins"),
-          options = options("margins", ReaderLayout.MARGINS, function(o) return page{ margin = Panel.MARGIN_SIZE[o.id] } end, name) },
-        { id = "align", text = _("Alignment"),
-          options = options("align", ReaderLayout.ALIGNMENTS, function(o) return page{ align = o.id } end, name) },
-        { id = "paragraphs", text = _("Paragraphs"), options = para },
-    }
-    local row_bottom = y
-    for i, g in ipairs(groups) do
-        local col = (i - 1) % cols
-        if col == 0 and i > 1 then y = row_bottom + gap_v end
-        local b = pageRow(nodes, t, g, m + col * (col_w + col_gap), y, col_w, g.options, icon_w, icon_h)
-        row_bottom = math.max(col == 0 and b or row_bottom, b)
-    end
-    y = row_bottom + gap_v
+    local row_w = 3 * icon_w + 2 * math.min(t:space(4) * 2, t:mm(12))
+    local page_bottom = pageRow(nodes, t, { id = "page", text = _("Page") }, page_x + math.floor((w - row_w) / 2), y,
+        row_w, options, icon_w, icon_h)
+    -- the label sits at the block's left edge like the others
+    for _i, node in ipairs(nodes) do if node.id == "label_page" then node.x, node.w = page_x, w end end
+    y = math.max(page_bottom, t.landscape and (size_top + t.type.label.line + t:space(1) + math.max(t.touch,
+        t.type.title.line + t.type.micro.line)) or 0) + gap_v
+    w = full_w
 
     nodes[#nodes + 1] = { kind = "rule", id = "summary_rule", x = m, y = y, w = w, h = t.hairline, color = "hairline" }
     y = y + t:space(2)

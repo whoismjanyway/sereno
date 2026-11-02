@@ -325,8 +325,10 @@ function Sereno:sleepBook()
         if total and total > 1 then book.percent = (self.ui.document:getCurrentPage() - 1) / (total - 1) end
     end
     book.authors = type(info.authors) == "table" and table.concat(info.authors, ", ") or info.authors
-    local total = metrics and MetricsCache.pageCount(metrics, self.settings:readSetting("page_method", "print"))
+    local method = self:homeOptions().page_method
+    local total = metrics and MetricsCache.pageCount(metrics, method)
     if total then book.page_total, book.page_now = total, math.max(1, math.floor(book.percent * total + 0.5)) end
+    book.locations = method == "locations"
     return book
 end
 
@@ -350,7 +352,8 @@ function Sereno:renderSleepImage()
         copy.date = frame.date
         if book then
             local pct = math.floor(book.percent * 100 + 0.5)
-            copy.progress = book.page_total and T(_("Page %1 of %2 · %3%"), book.page_now, book.page_total, pct)
+            copy.progress = book.page_total and T(book.locations and _("Location %1 of %2 · %3%") or _("Page %1 of %2 · %3%"),
+                book.page_now, book.page_total, pct)
                 or T(_("%1% read"), pct)
         end
         local bb = Blitbuffer.new(w, h, Blitbuffer.TYPE_BB8)
@@ -442,7 +445,7 @@ function Sereno:getSettingsTab()
             sub_item_table_func = function()
                 local items = {}
                 if self.ui.document then
-                    items[#items + 1] = { text = _("Text & page panel…"),
+                    items[#items + 1] = { text = _("Font, size and page…"),
                         callback = function(tm) if tm then tm:closeMenu() end self:showPagePanel() end }
                 end
                 items[#items + 1] = { text = _("Reading layout"), sub_item_table_func = function() return self:getReadingMenu() end }
@@ -526,7 +529,8 @@ end
 
 function Sereno:homeOptions()
     return {
-        page_method = self.settings:readSetting("page_method", "print"),
+        page_method = self.settings:readSetting("position") == "locations" and "locations"
+            or self.settings:readSetting("page_method", "print"),
         wpm = self.settings:readSetting("wpm", 230),
         translate = _,
         thousands = _.catalogue.thousands_separator,
@@ -752,7 +756,7 @@ function Sereno:onControlsAction(action, ges, overlay)
             self:closeHome()
             if self.ui.document then
                 session.skip_home_once = true
-                self.ui:onClose()
+                self:leaveBook()
             end
         end)
     end
@@ -827,11 +831,8 @@ function Sereno:chromeState()
     local page = ui.rolling and doc:getCurrentPage() or (ui.view and ui.view.state and ui.view.state.page) or 1
     local total = doc:getPageCount() or 1
     state.percent = total > 1 and (page - 1) / (total - 1) or 0
-    if ui.pagemap and ui.pagemap.wantsPageLabels and ui.pagemap:wantsPageLabels() then
-        state.page_label, state.total_label = ui.pagemap:getCurrentPageLabel(true), ui.pagemap:getLastPageLabel(true)
-    else
-        state.page_label, state.total_label = tostring(page), tostring(total)
-    end
+    local pos = self:readerPosition(page, total)
+    state.page_label, state.total_label, state.position_kind = pos.now, pos.total, pos.kind
     if ui.toc then
         state.chapter = ui.toc:getTocTitleByPage(page)
         local ticks = ui.toc.getTocTicksFlattened and ui.toc:getTocTicksFlattened(true) or {}
@@ -846,7 +847,69 @@ function Sereno:chromeState()
 end
 
 function Sereno:chromeCopy()
-    return { home = _("Home"), page_of = _("Page %s of %s") }
+    local locations = self.settings:readSetting("position") == "locations"
+    return { home = _("Home"), page_of = locations and _("Location %s of %s") or _("Page %s of %s") }
+end
+
+Sereno.LOCATION_BYTES = 128
+
+--[[--
+Where you are in the book, in numbers that never change with the font,
+size or margins:
+
+* pages: KOReader's synthetic page map, which crengine builds by counting
+  characters, tuned to the book's print-like page count (applyPageNumbers);
+* locations, like a Kindle: one every 128 characters of text, counted from
+  the same character-based page map.
+
+Falls back to the screen page only when neither is available (PDFs).
+]]
+function Sereno:readerPosition(page, total)
+    local ui = self.ui
+    local pm = ui.pagemap
+    local thousands = _.catalogue.thousands_separator or ","
+    local fmt = function(n) return require("sereno/home/presenter").thousands(n, thousands) end
+    local has_map = pm and pm.wantsPageLabels and pm:wantsPageLabels()
+    if self.settings:readSetting("position") == "locations" then
+        local cpp = pm and pm.chars_per_synthetic_page
+        if has_map and cpp then
+            local _label, idx, count = pm:getCurrentPageLabel(true)
+            if idx and count then
+                local now = math.floor((idx - 1) * cpp / Sereno.LOCATION_BYTES) + 1
+                local all = math.ceil(count * cpp / Sereno.LOCATION_BYTES)
+                return { kind = "locations", now = fmt(now), total = fmt(all) }
+            end
+        end
+        local metrics = ui.document and ui.document.file and MetricsService.peek(ui.document.file)
+        if metrics and metrics.chars then
+            local all = math.max(1, math.ceil(metrics.chars / Sereno.LOCATION_BYTES))
+            local now = math.floor(((page - 1) / math.max(1, total - 1)) * (all - 1)) + 1
+            return { kind = "locations", now = fmt(now), total = fmt(all) }
+        end
+    end
+    if has_map then
+        return { kind = "pages", now = pm:getCurrentPageLabel(true), total = pm:getLastPageLabel(true) }
+    end
+    return { kind = "screen", now = tostring(page), total = tostring(total) }
+end
+
+--[[--
+Leaves the book for Sereno's home screen. Closing the reader alone would
+quit KOReader (and land on the Kindle's own home) when KOReader was
+started straight into a book: there is no file manager underneath then.
+KOReader's own Home action closes the reader *and* opens the file
+manager, which then shows Sereno's home screen.
+]]
+function Sereno:leaveBook()
+    local ui = self.ui
+    session.home_after_reader = true
+    if ui.onHome then
+        ui:onHome()
+    else
+        local file = ui.document and ui.document.file
+        ui:onClose()
+        if ui.showFileManager then ui:showFileManager(file) end
+    end
 end
 
 function Sereno:gotoPage(page)
@@ -863,7 +926,7 @@ function Sereno:onChromeAction(action, ges, overlay)
     end
     local t = action.type
     if t == "home" then
-        later(function() ui:onClose() end)
+        later(function() self:leaveBook() end)
     elseif t == "panel" then
         later(function() self:showPagePanel() end)
     elseif t == "toc" then
@@ -1010,7 +1073,7 @@ function Sereno:addToMainMenu(menu_items)
     if self.ui.document then
         -- next to KOReader's own font and margin settings, in the typeset tab
         menu_items.sereno_page = {
-            text = _("Text & page (Sereno)"),
+            text = _("Font, size and page (Sereno)"),
             sorting_hint = "typeset",
             callback = function(touchmenu_instance)
                 if touchmenu_instance then touchmenu_instance:closeMenu() end
@@ -1122,7 +1185,7 @@ function Sereno:onReaderReady()
     if self:isSleepScreenOn() then
         UIManager:scheduleIn(3, function() if self.ui.document then self:renderSleepImage() end end)
     end
-    if not self.settings:isTrue("reader_page_numbers") then return end
+    if not self.settings:nilOrTrue("reader_page_numbers") then return end
     if self.ui.doc_settings and self.ui.doc_settings:readSetting("sereno_page_numbers") then return end
     -- after the first page is on screen, so opening the book isn't slowed down
     UIManager:scheduleIn(1, function()
@@ -1145,15 +1208,15 @@ function Sereno:layoutSummary(values)
         string.format("%.1f", ph.font_pt), string.format("%.0f", ph.side_mm), ph.chars_per_line, ph.lines_per_page)
 end
 
---- The page description in use: the last one chosen, or Paperback.
+--- The page description in use: the last one chosen, or Normal.
 function Sereno:currentSpec()
-    return ReaderLayout.spec(self.settings:readSetting("reading_spec") or "paperback")
+    return ReaderLayout.spec(self.settings:readSetting("reading_spec") or "normal")
 end
 
 --[[--
 Applies a layout to the open book, through the same events as KOReader's
-own bottom menu. `changed` names the one axis that changed (pt, spacing,
-margins, align, book_style), so a tap in the panel re-flows the book once;
+own bottom menu. `changed` names the one thing that changed (font, pt,
+page, align, book_style), so a tap in the panel re-flows the book once;
 nil applies everything.
 ]]
 function Sereno:applyReadingLayout(values, changed)
@@ -1170,14 +1233,17 @@ function Sereno:applyReadingLayout(values, changed)
     cfg.t_page_margin = values.t_margin
     cfg.b_page_margin = values.b_margin
     cfg.line_spacing = values.line_spacing
+    if (all or changed == "font") and values.font then
+        self.ui:handleEvent(Event:new("SetFont", values.font))
+    end
     if all or changed == "pt" then
         self.ui:handleEvent(Event:new("SetFontSize", values.font_size))
     end
-    if all or changed == "spacing" then
+    if all or changed == "page" then
         self.ui:handleEvent(Event:new("SetLineSpace", values.line_spacing))
     end
     -- the margins follow the text size too, through the line-length cap
-    if all or changed == "pt" or changed == "margins" then
+    if all or changed == "pt" or changed == "page" then
         -- all four margins in one re-layout; ReaderTypeset keeps the unscaled
         -- values it later edits one side at a time from
         local margins = { values.h_margins[1], values.t_margin, values.h_margins[2], values.b_margin }
@@ -1254,6 +1320,14 @@ function Sereno:setDefaultReadingLayout(values)
         for key, v in pairs(ReaderLayout.defaultSettings(values)) do
             G_reader_settings:saveSetting(key, v)
         end
+        if values.font then
+            local backup = self.settings:readSetting("copt_backup") or {}
+            if backup.cre_font == nil then
+                backup.cre_font = G_reader_settings:readSetting("cre_font") or false
+                self.settings:saveSetting("copt_backup", backup)
+            end
+            G_reader_settings:saveSetting("cre_font", values.font)
+        end
         self:applyTypography(values.spec, false)
         self.settings:saveSetting("reading_layout", values.preset or "custom")
         self.settings:saveSetting("reading_spec", values.spec)
@@ -1261,6 +1335,10 @@ function Sereno:setDefaultReadingLayout(values)
         local backup = self.settings:readSetting("copt_backup") or {}
         for _i, key in ipairs(keys) do
             if backup[key] then G_reader_settings:saveSetting(key, backup[key]) else G_reader_settings:delSetting(key) end
+        end
+        if backup.cre_font ~= nil then
+            if backup.cre_font then G_reader_settings:saveSetting("cre_font", backup.cre_font)
+            else G_reader_settings:delSetting("cre_font") end
         end
         self:restoreTypography()
         self.settings:delSetting("copt_backup")
@@ -1273,9 +1351,7 @@ end
 function Sereno:onPanelAction(action)
     local spec = self:currentSpec()
     local changed
-    if action.type == "preset" then
-        spec = ReaderLayout.spec(action.id)
-    elseif action.type == "size" then
+    if action.type == "size" then
         spec = ReaderLayout.with(spec, "pt", spec.pt + action.delta)
         changed = "pt"
     elseif action.type == "set" then
@@ -1288,16 +1364,57 @@ function Sereno:onPanelAction(action)
     return values
 end
 
---- The "Text & page" panel, like the Kindle's "Aa" panel.
+-- Fonts worth offering first, when KOReader has them (system fonts on a
+-- Kindle included); the font in use is always one of the choices.
+Sereno.PREFERRED_FONTS = { "Bookerly", "Literata", "Noto Serif", "Gentium Book Plus", "Charis SIL", "Caecilia",
+    "Georgia", "FreeSerif", "Noto Sans", "Open Sans" }
+
+--- Up to four { name, file } font choices for the panel.
+function Sereno:fontChoices()
+    local ok, FontList = pcall(require, "fontlist")
+    if not ok or not FontList then return {} end
+    if FontList.getFontList and not next(FontList.fontinfo or {}) then pcall(FontList.getFontList, FontList) end
+    local files = {}
+    for path, info in pairs(FontList.fontinfo or {}) do
+        local fi = info[1]
+        if fi and fi.name and not fi.bold and not fi.italic and not files[fi.name] then files[fi.name] = path end
+    end
+    local current = self.ui.font and self.ui.font.font_face or self:currentSpec().font
+    local out, seen = {}, {}
+    local function add(name)
+        if name and files[name] and not seen[name] and #out < 4 then
+            out[#out + 1] = { name = name, file = files[name] }
+            seen[name] = true
+        end
+    end
+    add(current)
+    for _i, name in ipairs(Sereno.PREFERRED_FONTS) do add(name) end
+    -- keep the current font first only if it isn't among the usual ones
+    table.sort(out, function(a, b)
+        local function rank(n) for i, v in ipairs(Sereno.PREFERRED_FONTS) do if v == n then return i end end return 0 end
+        return rank(a.name) < rank(b.name)
+    end)
+    return out, current
+end
+
+--- The "Text" panel, like the Kindle's "Aa" panel: font, size, page.
 function Sereno:showPagePanel()
     if not (self.ui.document and self.ui.rolling) then
         UIManager:show(InfoMessage:new{ text = _("Reading layouts apply to reflowable books (EPUB, FB2, MOBI…), not to PDF or comics.") })
         return
     end
+    local fonts, current = self:fontChoices()
+    local values = ReaderLayout.compute(self:readerScreen(), self:currentSpec())
+    values.font = values.font or current
     local panel = PanelWidget:new{
-        values = ReaderLayout.compute(self:readerScreen(), self:currentSpec()),
+        values = values,
+        fonts = fonts,
         translate = _,
-        on_action = function(action) return self:onPanelAction(action) end,
+        on_action = function(action)
+            local v = self:onPanelAction(action)
+            v.font = v.font or current
+            return v
+        end,
     }
     UIManager:show(panel)
     return panel
@@ -1308,60 +1425,80 @@ function Sereno:onSerenoShowPagePanel()
     return true
 end
 
+--- Reading settings: the panel, two typography switches, and the way back.
 function Sereno:getReadingMenu()
     local screen = self:readerScreen()
+    local function toggle(key, label, help)
+        return {
+            text = label, help_text = help,
+            checked_func = function()
+                local spec = self:currentSpec()
+                if key == "align" then return spec.align == "justify" end
+                return spec.book_style ~= false
+            end,
+            callback = function()
+                local spec = self:currentSpec()
+                local value
+                if key == "align" then value = spec.align == "justify" and "left" or "justify"
+                else value = not (spec.book_style ~= false) end
+                spec = ReaderLayout.with(spec, key, value)
+                local values = ReaderLayout.compute(screen, spec)
+                if self.ui.document and self.ui.rolling then self:applyReadingLayout(values, key) end
+                self:setDefaultReadingLayout(values)
+            end,
+        }
+    end
     local menu = {}
     if self.ui.document then
         menu[#menu + 1] = {
-            text = _("Text & page panel…"),
-            separator = true,
+            text = _("Font, size and page…"),
             callback = function(touchmenu_instance)
                 if touchmenu_instance then touchmenu_instance:closeMenu() end
                 self:showPagePanel()
             end,
         }
     end
-    for _i, preset in ipairs(ReaderLayout.PRESETS) do
-        local values = ReaderLayout.compute(screen, preset.id)
-        menu[#menu + 1] = {
-            text = _(preset.name),
-            help_text = self:layoutSummary(values),
-            radio = true,
-            checked_func = function() return self.settings:readSetting("reading_layout") == preset.id end,
-            callback = function()
-                local applied = self.ui.document and self:applyReadingLayout(values)
-                self:setDefaultReadingLayout(values)
-                UIManager:show(InfoMessage:new{
-                    text = T(applied and _("%1 applied to this book and to new books.\n%2") or _("New books will open with %1.\n%2"),
-                        _(preset.name), self:layoutSummary(values)),
-                    timeout = 4,
-                })
-            end,
-        }
-    end
-    if self.settings:readSetting("reading_layout") == "custom" then
-        menu[#menu + 1] = {
-            text = _("Custom"),
-            help_text = self:layoutSummary(ReaderLayout.compute(screen, self:currentSpec())),
-            radio = true,
-            checked_func = function() return true end,
-            callback = function() end,
-        }
-    end
+    menu[#menu + 1] = toggle("align", _("Justified text"), _("Even right edges, as in printed books. Off: ragged right."))
+    menu[#menu + 1] = toggle("book_style", _("Book-style paragraphs"),
+        _("Indented first lines, no blank lines between paragraphs, centred headings, no widows or orphans."))
     menu[#menu].separator = true
     menu[#menu + 1] = {
-        text = _("KOReader's defaults"),
+        text = _("Back to KOReader's defaults"),
         help_text = self:layoutSummary({ physical = ReaderLayout.describe(screen, {
             font_size = 22, h_margin = 10, t_margin = 10, b_margin = 10, line_spacing = 100 }) }),
-        radio = true,
-        checked_func = function() return self.settings:readSetting("reading_layout") == nil end,
+        enabled_func = function() return self.settings:readSetting("reading_layout") ~= nil end,
         callback = function() self:setDefaultReadingLayout(nil) end,
     }
     return menu
 end
 
+function Sereno:positionItems()
+    local function set(v)
+        self.settings:saveSetting("position", v)
+        self.settings:flush()
+        if session.home then session.home.options = self:homeOptions(); session.home:update() end
+    end
+    return {
+        {
+            text = _("Show pages (like the printed book)"),
+            help_text = _("Page 68 of 179: the same numbers whatever font, size or margins you choose."),
+            radio = true,
+            checked_func = function() return self.settings:readSetting("position") ~= "locations" end,
+            callback = function() set(nil) end,
+        },
+        {
+            text = _("Show locations (like a Kindle)"),
+            help_text = _("Location 452 of 3,400: one location every 128 characters of text, so they never change with your font settings either, and are finer than pages."),
+            radio = true,
+            checked_func = function() return self.settings:readSetting("position") == "locations" end,
+            callback = function() set("locations") end,
+            separator = true,
+        },
+    }
+end
+
 function Sereno:getPagesMenu()
-    local menu = {}
+    local menu = self:positionItems()
     for _i, method in ipairs(MetricsDialog.METHODS) do
         menu[#menu + 1] = {
             text = _(MetricsDialog.METHOD_LABELS[method]),
@@ -1380,11 +1517,11 @@ function Sereno:getPagesMenu()
     menu[#menu + 1] = {
         text = _("Use these page numbers in the reader"),
         help_text = _("Tunes KOReader's stable page numbers so each book has exactly the pages shown here. The status bar and Go to page then match the home screen, whatever your font settings. Books with publisher page numbers keep them."),
-        checked_func = function() return self.settings:isTrue("reader_page_numbers") end,
+        checked_func = function() return self.settings:nilOrTrue("reader_page_numbers") end,
         callback = function()
-            self.settings:saveSetting("reader_page_numbers", not self.settings:isTrue("reader_page_numbers"))
+            self.settings:saveSetting("reader_page_numbers", not self.settings:nilOrTrue("reader_page_numbers"))
             self.settings:flush()
-            if self.settings:isTrue("reader_page_numbers") and self.ui.document then self:applyPageNumbers(false) end
+            if self.settings:nilOrTrue("reader_page_numbers") and self.ui.document then self:applyPageNumbers(false) end
         end,
     }
     local speeds = { 180, 230, 280, 330 }

@@ -33,7 +33,7 @@ sereno.koplugin/
     ├── sleep/layout.lua       ✱ Sereno's sleep screen image
     ├── reader/
     │   ├── layout.lua         ✱ the page in pt/mm (size, spacing, margins, alignment, paragraphs) → KOReader settings and style tweaks
-    │   ├── panel.lua          ✱ the Text & page panel as positioned nodes, and its miniature pages
+    │   ├── panel.lua          ✱ the Text panel (font, size, page) as positioned nodes, and its miniature pages
     │   └── panelwidget.lua    KOReader widget: bottom sheet, taps
     ├── home/
     │   ├── context.lua        ✱ what to show: reading / finished / start / empty
@@ -85,7 +85,7 @@ KOReader only adds a plugin's folder to `package.path` while `main.lua` is being
 
 It then draws Sereno's HomeScreen with KOReader's real Blitbuffer, Font, TextWidget, TextBoxWidget, IconWidget and ImageWidget code, and writes PNGs. The only C pieces it replaces are image decoding (nanosvg, turbojpeg, MuPDF scaling), which ImageMagick and Lua stand in for, and utf8proc case folding. CI runs it on every push, so a change in KOReader's widget API that breaks Sereno's drawing shows up there.
 
-With `KORENDER_READER=1` it also sets the opening page of a book, KOReader's default layout next to Sereno's, every preset, and the Text & page panel over the page (the real `PanelWidget`). `tools/korender/bookpage.lua` sets those pages the way crengine does: crengine's hyphenation patterns (Liang's algorithm), greedy line filling with spaces that may condense to 75 %, first-line indents, the font's own line height. crengine itself is not built, so these pages are a close approximation of the reader, not a screenshot of it. `tools/korender/compose.py` puts them in device frames for the README.
+With `KORENDER_READER=1` it also sets the opening page of a book, KOReader's default layout next to Sereno's, the three pages, and the Text panel over the page (the real `PanelWidget`). `tools/korender/bookpage.lua` sets those pages the way crengine does: crengine's hyphenation patterns (Liang's algorithm), greedy line filling with spaces that may condense to 75 %, first-line indents, the font's own line height. crengine itself is not built, so these pages are a close approximation of the reader, not a screenshot of it. `tools/korender/compose.py` puts them in device frames for the README.
 
 ## Tests
 
@@ -100,5 +100,5 @@ With `KORENDER_READER=1` it also sets the opening page of a book, KOReader's def
 | `home_spec` | Context, wording, and the layout on 7 screen sizes × 4 states |
 | `reader_spec` | Reading layouts: physical sizes, margins never under 5 mm, line-length cap, independent axes, style tweak ids that exist in KOReader |
 | `shell_spec` | Every tab, the quick controls and the reader's bars on 7 screens: nothing leaves the screen or overlaps, touch targets, paging |
-| `smoke_spec` | Loads `main.lua` against stubs of KOReader modules (`spec/koreader_stubs.lua`), walks every menu, shows the home screen, taps every target, opens the metrics dialog, counts a folder, drives the Text & page panel tap by tap and checks it fits six screens |
+| `smoke_spec` | Loads `main.lua` against stubs of KOReader modules (`spec/koreader_stubs.lua`), walks every menu, shows the home screen, taps every target, opens the metrics dialog, counts a folder, drives the Text panel tap by tap, the reader's bars, locations and checks it fits six screens |
 | `l10n_spec` | Translations are complete and keep their placeholders |

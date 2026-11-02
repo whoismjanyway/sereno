@@ -86,6 +86,11 @@ function Painter:textWidget(node)
     if w then return w end
     local style = self.theme.type[node.style]
     local face = self:face(node.style)
+    if node.font_file then
+        -- a sample written in another typeface (the Text panel's font choices)
+        local ok, f = pcall(Font.getFace, Font, node.font_file, self.theme:faceSize(style.size))
+        if ok and f then face = f end
+    end
     local color = INK[node.color] or INK.text
     local single = (node.max_lines or 1) <= 1
     local text = node.text or ""

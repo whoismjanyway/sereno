@@ -140,12 +140,17 @@ function Presenter.present(model, _, status, sep)
 
     local hero = model.hero
     if hero then
+        -- pages, or Kindle-style locations
+        local loc = hero.page_method == "locations"
+        local T_ALL = loc and _("%1 locations") or _("%1 pages")
+        local T_AT = loc and _("Location %1 of %2") or _("Page %1 of %2")
+        local T_AT_PCT = loc and _("Location %1 of %2 · %3%") or _("Page %1 of %2 · %3%")
         if type(hero.authors) == "table" then hero.authors = table.concat(hero.authors, ", ") end
         local short = Presenter.shortTitle(hero.title)
         hero.short_title = short ~= hero.title and short or nil
         if model.state == "finished" then
             local parts = {}
-            if hero.page_total then parts[#parts + 1] = fill(_("%1 pages"), thousands(hero.page_total, sep)) end
+            if hero.page_total then parts[#parts + 1] = fill(T_ALL, thousands(hero.page_total, sep)) end
             if hero.minutes_total then
                 parts[#parts + 1] = fill(_("%1 of reading"), Context.formatDuration(hero.minutes_total, duration_words))
             end
@@ -156,10 +161,10 @@ function Presenter.present(model, _, status, sep)
         else
             local pct = math.floor((hero.percent or 0) * 100 + 0.5)
             if hero.page_total and hero.percent and hero.percent > 0 then
-                hero.progress_line = fill(_("Page %1 of %2 · %3%"), thousands(hero.page_now, sep),
+                hero.progress_line = fill(T_AT_PCT, thousands(hero.page_now, sep),
                     thousands(hero.page_total, sep), pct)
             elseif hero.page_total then
-                hero.progress_line = fill(_("%1 pages"), thousands(hero.page_total, sep))
+                hero.progress_line = fill(T_ALL, thousands(hero.page_total, sep))
             elseif hero.percent and hero.percent > 0 then
                 hero.progress_line = fill(_("%1% read"), pct)
             end
@@ -175,9 +180,9 @@ function Presenter.present(model, _, status, sep)
         hero.chips = {}
         if hero.page_total then
             if model.state == "reading" and hero.page_now then
-                hero.chips[#hero.chips + 1] = fill(_("Page %1 of %2"), thousands(hero.page_now, sep), thousands(hero.page_total, sep))
+                hero.chips[#hero.chips + 1] = fill(T_AT, thousands(hero.page_now, sep), thousands(hero.page_total, sep))
             else
-                hero.chips[#hero.chips + 1] = fill(_("%1 pages"), thousands(hero.page_total, sep))
+                hero.chips[#hero.chips + 1] = fill(T_ALL, thousands(hero.page_total, sep))
             end
         end
         if model.state == "reading" and hero.minutes_left and (hero.percent or 0) > 0 then

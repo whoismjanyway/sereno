@@ -82,6 +82,15 @@ for _i, scr in ipairs(SCREENS) do
             total_label = "179", percent = 0.38, ticks = { 0, 0.2, 0.5 }, can_prev = true, can_next = true, back_label = "Back to page 12" }
         local nodes, geo = ChromeLayout.layout(t, state, { home = "Home", page_of = "Page %s of %s" })
         fits("bars", t, nodes)
+        local colors = {}
+        for _j, n in ipairs(nodes) do if n.id == "prev_chapter" or n.id == "next_chapter" then colors[n.id] = n.color end end
+        eq(colors.prev_chapter, "text")
+        eq(colors.next_chapter, "text")
+        local first = ChromeLayout.layout(t, { title = "x", percent = 0, can_prev = false, can_next = true }, { home = "Home" })
+        for _j, n in ipairs(first) do
+            if n.id == "prev_chapter" then eq(n.color, "secondary", "nothing before the first chapter") end
+            if n.id == "next_chapter" then eq(n.color, "text") end
+        end
         truthy(geo.bottom_y - geo.top_h > t.height * 0.5, "page between the bars")
     end)
 end

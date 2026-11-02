@@ -122,37 +122,42 @@ KOReader sets the reader's font size and margins in "relative pixels" that grow 
 
 So the text runs almost to the bezel on every device, and changes size from one device to the next. Sereno sets the page like a printed book instead: 8 mm margins, a book-like leading of 1.5, indented paragraphs, justified and hyphenated lines, and chapters that open lower on the page.
 
-![KOReader's default page next to Sereno's Paperback layout on a 6" Kindle, a Paperwhite and a Scribe](docs/images/design/reader-margins.png)
+![KOReader's default page next to Sereno's Normal page on a 6" Kindle, a Paperwhite and a Scribe](docs/images/design/reader-margins.png)
 
-### The Text & page panel
+### The Text panel: font, size, page
 
-Like the Kindle's *Aa* panel, every choice is a small picture of a page. Open it from the reader's typeset menu (*Text & page (Sereno)*), *Settings → Sereno → Reading layout*, or a gesture (*Sereno: text & page panel*). Each tap changes one thing and the book re-flows behind the panel straight away.
+Like the Kindle's *Aa* panel, and kept just as simple. Tap *Aa* in the bar at the top of a book (or *Font, size and page (Sereno)* in KOReader's typeset menu). Each tap changes one thing and the book re-flows behind the panel straight away.
 
-![The Text & page panel on three devices](docs/images/design/reader-panel.png)
-
-| Control | Choices |
+| Control | What it does |
 |---|---|
-| Layout | Compact, Paperback, Airy, Large print |
-| Text size | Half-point steps, with the line length it gives |
-| Spacing | Tight (1.36), Normal (1.5), Loose (1.7) line height |
-| Margins | Narrow (5 mm), Normal (8 mm), Wide (14 mm), widened further on big screens to keep lines under 58–75 characters |
-| Alignment | Justified or left |
-| Paragraphs | **Book:** first-line indents, no blank lines, centred headings, no widows or orphans, hyphenation everywhere. **Publisher:** the book's own style. |
+| **Font** | Up to four fonts, each written in its own typeface. Bookerly, Literata, Noto Serif and the like come first when KOReader has them. |
+| **Size** | A / A, in half-point steps, with the line length it gives. |
+| **Page** | **Compact**, **Normal** or **Roomy**: margins (5, 8 or 14 mm) and line spacing that belong together. On big screens the margins grow so lines stay readable. |
 
-How a change is applied:
-- **This book:** it changes immediately, through the same events as KOReader's own bottom menu, so KOReader's sliders show the new values.
-- **New books:** they open with it, through KOReader's default settings and style tweaks.
-- **Going back:** *Reading layout → KOReader's defaults* restores whatever defaults and style tweaks you had before.
+![The Text panel on three devices](docs/images/design/reader-panel.png)
 
-The four layouts on a Paperwhite:
+New books open with the same font, size and page. Two switches live in *Settings → Sereno → Reader*: *Justified text* and *Book-style paragraphs* (indented first lines, no blank lines between paragraphs, centred headings, hyphenation). *Back to KOReader's defaults* gives you back the settings you had before Sereno.
 
-![Compact, Paperback, Airy and Large print on a Kindle Paperwhite](docs/images/design/reader-layouts.png)
+The three pages on a Paperwhite:
+
+![Compact, Normal and Roomy on a Kindle Paperwhite](docs/images/design/reader-layouts.png)
 
 The base text size depends on the screen: 10 pt on 6", 10.5 pt on 7", 11.5 pt on 8", 13.5 pt on larger screens.
 
 *These pages are set by `tools/korender` with KOReader's own font renderer and crengine's hyphenation patterns, the way crengine sets them: greedy line filling, spaces that may condense to 75 %, 1.2 em indents. crengine itself isn't built there, so a line may break differently on a device.*
 
-**Page numbers that match.** Turn on *Page counts → Use these page numbers in the reader*. Sereno then tunes KOReader's own stable page numbers so each book has exactly the pages shown on the home screen. The status bar and *Go to page* use the same numbers, whatever your font settings. Books with publisher page numbers keep them.
+### Page numbers that don't move
+
+A Kindle can't number pages the way a printed book does: change the font or line spacing and one printed page may spread over several screens, or several over one. KOReader's ordinary page numbers count *screens*, so *page 120 of 340* becomes *page 180 of 512* when you make the text bigger.
+
+Sereno numbers your position by the **text** instead, so it never changes with your settings. You choose how it's shown in *Settings → Sereno → Reader → Page counts*:
+
+| Show | Example | How it's counted |
+|---|---|---|
+| **Pages** (default) | Page 68 of 179 | The book's print-like page count (see below), laid onto KOReader's character-based page map |
+| **Locations**, like a Kindle | Location 452 of 3,400 | One location every 128 characters of text, as Kindle locations are 128-byte blocks |
+
+Both are counted from crengine's own page map, which cuts the text by characters, not by screens. The home screen, the bars in the book, the status bar and *Go to page* all use the same numbers. Books whose publisher included real page numbers keep them.
 
 ## Page counts
 
@@ -194,14 +199,14 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
 2. Restart KOReader.
 3. Open **Settings → Sereno**:
    - Sereno's home screen opens at start-up (turn off *Start with the home screen* to keep KOReader's file browser).
-   - **Reading layout** sets up the page you read; in a book, *Text & page panel…* opens the panel.
+   - In a book, tap *Aa* in the bar at the top to choose the font, size and page.
    - **Page counts → Count all books in this folder** counts the whole library once.
    - **Tiered menus** lets you choose *Reading*, *Everyday* or *Everything*.
 
 Covers come from KOReader's CoverBrowser cache when that plugin is on. Otherwise Sereno renders the cover image stored inside the EPUB itself, keeping at most 16 in memory. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
 
 > **Status:** 0.3, early. **It has not yet been tried on a real device.** What has been checked:
-> - **Specs:** 179 of them, run on LuaJIT with stubs of KOReader's modules.
+> - **Specs:** 181 of them, run on LuaJIT with stubs of KOReader's modules.
 > - **Real widget code:** the home screen is also drawn by KOReader's own code (blitbuffer, FreeType fonts, TextBoxWidget, IconWidget) on every CI run, with `tools/korender`.
 > - **Previews:** layout previews for several devices. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
 

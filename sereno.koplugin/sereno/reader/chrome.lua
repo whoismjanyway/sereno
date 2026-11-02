@@ -110,14 +110,17 @@ function ChromeLayout.layout(t, state, copy)
     yy = yy + t.type.caption.line + t:space(1)
     iconButton(nodes, t, "prev_chapter", "chevron.first", x, yy, size, { type = "prev_chapter" })
     iconButton(nodes, t, "next_chapter", "chevron.last", x + w - size, yy, size, { type = "next_chapter" })
-    if not state.can_prev then nodes[#nodes - 1].color = "secondary" end
     local sx, sw = x + size + t:space(1), w - 2 * size - t:space(2)
     nodes[#nodes + 1] = { kind = "slider", id = "progress", x = sx, y = yy, w = sw, h = slider_h,
         fraction = state.percent or 0, ticks = state.ticks }
     nodes[#nodes + 1] = { kind = "tap", id = "progress_tap", x = sx, y = yy, w = sw, h = slider_h,
         action = { type = "seek", x0 = sx, x1 = sx + sw } }
+    -- chapter skips that lead nowhere are dimmed
     for i = first_bottom, #nodes do
-        if nodes[i].id == "next_chapter" and not state.can_next then nodes[i].color = "secondary" end
+        local id = nodes[i].id
+        if (id == "prev_chapter" and not state.can_prev) or (id == "next_chapter" and not state.can_next) then
+            nodes[i].color = "secondary"
+        end
     end
 
     -- after a jump: the way back, floating above the bottom bar

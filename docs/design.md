@@ -52,23 +52,28 @@ The home screen answers one question first, "where was I?", and then offers a fe
 
 The reader has the same problem as the interface. KOReader stores the font size and margins in relative pixels (`Screen:scaleBySize`). With the defaults (font 22, margins 10), text is set at 9.5 pt with 1.5 mm side margins on a 6" Kindle, and at 16.6 pt with 2.6 mm margins on a Kindle Scribe. The text runs almost to the bezel.
 
-`sereno/reader/layout.lua` describes a page the way the Kindle's *Aa* panel does, on independent axes, and the presets are named combinations:
+`sereno/reader/layout.lua` keeps the choices to what a reader changes while reading, like the Kindle's *Aa* panel:
 
-| Axis | Values |
+| Choice | Values |
 |---|---|
-| Text size | Points, in half steps around a base set by the diagonal (10 / 10.5 / 11.5 / 13.5 pt) |
-| Spacing | crengine's line spacing 100 / 110 / 125 %, which is 1.36 / 1.5 / 1.7 em with Noto Serif (crengine's 100 % is the font's ascender + descender) |
-| Margins | 5 / 8 / 14 mm at the sides, plus a line-length cap of 75 / 66 / 58 characters (0.52 em per character in Noto Serif, measured): on big screens the margins grow instead of the lines |
-| Alignment | Justified or left, through KOReader's style tweaks |
-| Paragraphs | Book style (KOReader's style tweaks for first-line indents, no paragraph gaps, centred headings, no widows and orphans, hyphenation) or the publisher's |
+| Font | Any font KOReader has; the panel offers up to four, each written in its own typeface |
+| Size | Points, in half steps around a base set by the diagonal (10 / 10.5 / 11.5 / 13.5 pt) |
+| Page | Compact, Normal, Roomy. Each pairs margins (5 / 8 / 14 mm, with a line-length cap of 75 / 66 / 58 characters, so on big screens the margins grow instead of the lines) with line spacing (crengine's 100 / 110 / 125 %, which is 1.36 / 1.5 / 1.7 em with Noto Serif) |
+
+Justified text and book-style paragraphs (KOReader's style tweaks for first-line indents, no paragraph gaps, centred headings, no widows and orphans, hyphenation) are on by default and are two switches in Settings.
 
 Values are converted back to KOReader's units for the screen at hand, and applied through KOReader's own events (`SetFontSize`, `SetLineSpace`, `SetPageMargins`) and `ReaderStyleTweak`'s global tweaks. Only the axis that changed is sent, so one tap re-flows the book once. New books get the same through KOReader's `copt_*` defaults and `style_tweaks`, after the user's previous values are kept aside.
 
-![KOReader's default page vs Sereno Paperback](images/design/reader-margins.png)
+![KOReader's default page vs Sereno's Normal page](images/design/reader-margins.png)
 
-The *Text & page* panel (`sereno/reader/panel.lua`) is a bottom sheet of at most 70 % of the screen, so the page stays in view while it re-flows. Every choice is drawn as a miniature page with the real proportions of that option; the selected one gets a heavy border, like the Kindle's. Groups sit in a 2 × 2 grid, or in one row in landscape.
+The *Text* panel (`sereno/reader/panel.lua`) is a bottom sheet that leaves most of the page in view while it re-flows: Font, Size and Page, nothing else. Each page choice is drawn as a miniature page with the real proportions of that option; the selected one gets a heavy border, like the Kindle's. In landscape, Size and Page share a row.
 
-![The Text & page panel](images/design/reader-panel.png)
+![The Text panel](images/design/reader-panel.png)
+
+## Position
+
+A printed page has no fixed size on a screen, so Sereno numbers your position by the text: KOReader's synthetic page map (crengine cuts the text by characters, not by screens) is tuned to the book's print-like page count. *Pages* reads the page from it; *Locations*, like a Kindle, turns the same character position into one location per 128 characters. Neither changes with the font, size or margins.
+
 
 ## The pieces
 

@@ -12,17 +12,17 @@ ignoring the screen's density. With its defaults (font 22, margins 10):
 so text grows with the pixel count and the margins stay a hair wide on
 every device: the text runs almost to the bezel.
 
-Sereno describes a page the way a book designer (or the Kindle's own
-"Aa" panel) does, on four independent axes:
+Sereno describes a page the way the Kindle's own "Aa" panel does, with
+as few knobs as possible:
 
+  font        one of the fonts KOReader has
   text size   points, in half-point steps around a base set by the diagonal
-  spacing     tight / normal / loose line spacing
-  margins     narrow / normal / wide, in millimetres, plus a maximum line
-              length: on big screens the margins grow instead of the lines
-  alignment   justified or left-aligned
+  page        Compact, Normal or Roomy: margins in millimetres and line
+              spacing that belong together; on big screens the margins
+              grow instead of the lines
+  (and, in Settings, justified or left-aligned text and book-style paragraphs)
 
-and the presets (Compact, Paperback, Airy, Large print) are just named
-combinations. Everything is converted back to KOReader's units for the
+Everything is converted back to KOReader's units for the
 screen at hand. Pure Lua; the screen is passed in.
 ]]
 
@@ -59,12 +59,16 @@ ReaderLayout.ALIGNMENTS = {
     { id = "left", name = "Left" },
 }
 
-ReaderLayout.PRESETS = {
-    { id = "compact", name = "Compact", pt = -0.5, spacing = "tight", margins = "narrow", align = "justify" },
-    { id = "paperback", name = "Paperback", pt = 0, spacing = "normal", margins = "normal", align = "justify" },
-    { id = "airy", name = "Airy", pt = 0.5, spacing = "loose", margins = "wide", align = "left" },
-    { id = "large", name = "Large print", pt = 4, spacing = "normal", margins = "normal", align = "left", max_chars = 50 },
+-- The page, as the panel offers it: three choices, each a pair of margins
+-- and line spacing that belong together (KISS: no separate knobs).
+ReaderLayout.PAGES = {
+    { id = "compact", name = "Compact", spacing = "tight", margins = "narrow" },
+    { id = "normal", name = "Normal", spacing = "normal", margins = "normal" },
+    { id = "roomy", name = "Roomy", spacing = "loose", margins = "wide" },
 }
+
+-- names of earlier versions' presets
+local LEGACY = { paperback = { page = "normal" }, airy = { page = "roomy", pt = 0.5 }, large = { page = "normal", pt = 4 } }
 
 --[[--
 KOReader style tweaks (frontend/ui/data/css_tweaks.lua) that make a book
@@ -88,33 +92,32 @@ local function find(list, id)
     end
 end
 
-function ReaderLayout.preset(id)
-    return find(ReaderLayout.PRESETS, id) or ReaderLayout.PRESETS[2]
-end
+function ReaderLayout.page(id) return find(ReaderLayout.PAGES, id) or ReaderLayout.PAGES[2] end
 function ReaderLayout.spacing(id) return find(ReaderLayout.SPACING, id) or ReaderLayout.SPACING[2] end
 function ReaderLayout.margins(id) return find(ReaderLayout.MARGINS, id) or ReaderLayout.MARGINS[2] end
 
---- A page description ("spec") from a preset id, or a copy of a spec.
+--[[--
+A page description ("spec"): { pt, page, font, align, book_style }.
+Accepts a page id, nil (Normal), or a spec, including earlier versions'
+(preset names, or separate spacing and margins).
+]]
 function ReaderLayout.spec(p)
-    if type(p) ~= "table" then p = ReaderLayout.preset(p) end
+    if p == nil then p = "normal" end
+    if type(p) ~= "table" then
+        local legacy = LEGACY[p]
+        p = legacy and { page = legacy.page, pt = legacy.pt } or { page = p }
+    end
+    local page = p.page
+    if not find(ReaderLayout.PAGES, page or "") then
+        page = (p.margins == "narrow" and "compact") or (p.margins == "wide" and "roomy") or "normal"
+    end
     return {
         pt = p.pt or 0,
-        spacing = ReaderLayout.spacing(p.spacing).id,
-        margins = ReaderLayout.margins(p.margins).id,
+        page = page,
+        font = p.font,
         align = (p.align == "left") and "left" or "justify",
-        max_chars = p.max_chars,
         book_style = p.book_style ~= false,
     }
-end
-
---- The preset a spec corresponds to, if any.
-function ReaderLayout.presetFor(spec)
-    for _i, p in ipairs(ReaderLayout.PRESETS) do
-        if p.pt == spec.pt and p.spacing == spec.spacing and p.margins == spec.margins
-            and p.align == spec.align and p.max_chars == spec.max_chars then
-            return p
-        end
-    end
 end
 
 --- Reading size in points by physical diagonal: about 45-55 characters a
@@ -179,7 +182,8 @@ function ReaderLayout.compute(screen, preset_or_spec)
     local spec = ReaderLayout.spec(preset_or_spec)
     local delta = math.max(ReaderLayout.MIN_DELTA, math.min(ReaderLayout.MAX_DELTA, spec.pt))
     spec.pt = delta
-    local spacing, margins = ReaderLayout.spacing(spec.spacing), ReaderLayout.margins(spec.margins)
+    local page = ReaderLayout.page(spec.page)
+    local spacing, margins = ReaderLayout.spacing(page.spacing), ReaderLayout.margins(page.margins)
     local f = ReaderLayout.scaleFactor(screen)
     local pt = ReaderLayout.basePt(ReaderLayout.diagonal(screen)) + delta
     local font_px = pt * screen.dpi / 72
@@ -189,20 +193,20 @@ function ReaderLayout.compute(screen, preset_or_spec)
 
     local side_px = margins.side_mm * screen.dpi / 25.4
     -- keep lines short enough to read comfortably: widen the margins if needed
-    local max_chars = math.min(spec.max_chars or margins.max_chars, margins.max_chars)
+    local max_chars = margins.max_chars
     local max_w = max_chars * ReaderLayout.CHAR_EM * font_px
     if screen.width - 2 * side_px > max_w then side_px = (screen.width - max_w) / 2 end
     local h = math.ceil(side_px / f)
     local t = math.ceil(margins.top_mm * screen.dpi / 25.4 / f)
     local b = math.ceil(margins.bottom_mm * screen.dpi / 25.4 / f)
-    local p = ReaderLayout.presetFor(spec)
     local values = {
         font_size = font_size,
         h_margins = { h, h },
         t_margin = t,
         b_margin = b,
         line_spacing = spacing.line_spacing,
-        preset = p and p.id or nil,
+        preset = spec.page,
+        font = spec.font,
         spec = spec,
         align = spec.align,
         book_style = spec.book_style,
@@ -221,8 +225,6 @@ function ReaderLayout.with(spec, key, value)
         value = math.max(ReaderLayout.MIN_DELTA, math.min(ReaderLayout.MAX_DELTA, value))
     end
     s[key] = value
-    -- a fixed line-length cap only belongs to the preset that set it
-    if key == "margins" then s.max_chars = nil end
     return s
 end
 

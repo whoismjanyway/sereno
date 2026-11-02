@@ -18,8 +18,8 @@ test("describes KOReader's defaults physically", function()
 end)
 
 test("presets give similar physical text and margins on every 6-7\" screen", function()
-    local a = ReaderLayout.compute(BASIC, "paperback").physical
-    local b = ReaderLayout.compute(PW, "paperback").physical
+    local a = ReaderLayout.compute(BASIC, "normal").physical
+    local b = ReaderLayout.compute(PW, "normal").physical
     -- normal margins: 8 mm, like the Kindle's own default and a paperback's outer margin
     near(a.side_mm, 8, 0.6)
     near(b.side_mm, 8, 0.6)
@@ -30,10 +30,10 @@ test("presets give similar physical text and margins on every 6-7\" screen", fun
 end)
 
 test("line length stays readable: margins grow on big screens", function()
-    for _i, p in ipairs(ReaderLayout.PRESETS) do
+    for _i, p in ipairs(ReaderLayout.PAGES) do
         local v = ReaderLayout.compute(SCRIBE, p.id)
         local m = ReaderLayout.margins(p.margins)
-        local cap = math.min(p.max_chars or m.max_chars, m.max_chars)
+        local cap = m.max_chars
         truthy(v.physical.chars_per_line <= cap + 1, p.id .. ": " .. v.physical.chars_per_line)
         truthy(v.physical.side_mm >= m.side_mm - 0.5, p.id .. " margin")
     end
@@ -57,7 +57,7 @@ end)
 
 test("margins are never a hair wide: at least 5 mm on every screen and preset", function()
     for _i, screen in ipairs({ BASIC, PW, SCRIBE }) do
-        for _j, p in ipairs(ReaderLayout.PRESETS) do
+        for _j, p in ipairs(ReaderLayout.PAGES) do
             local ph = ReaderLayout.compute(screen, p.id).physical
             truthy(ph.side_mm >= 4.9, p.id .. " side " .. ph.side_mm)
             truthy(ph.top_mm >= 4.9, p.id .. " top " .. ph.top_mm)
@@ -66,31 +66,34 @@ test("margins are never a hair wide: at least 5 mm on every screen and preset", 
 end)
 
 test("line spacing gives a book-like leading", function()
-    local ph = ReaderLayout.compute(PW, "paperback").physical
+    local ph = ReaderLayout.compute(PW, "normal").physical
     near(ph.line_em, 1.5, 0.05)
 end)
 
-test("the panel's axes are independent and presets are combinations of them", function()
-    local s = ReaderLayout.spec("paperback")
-    eq(ReaderLayout.presetFor(s).id, "paperback")
-    local wide = ReaderLayout.with(s, "margins", "wide")
-    eq(ReaderLayout.presetFor(wide), nil, "a changed axis is a custom layout")
-    local a, b = ReaderLayout.compute(PW, s), ReaderLayout.compute(PW, wide)
-    eq(a.font_size, b.font_size)
-    eq(a.line_spacing, b.line_spacing)
-    truthy(b.h_margins[1] > a.h_margins[1], "wider margins")
+test("three pages, a size and a font: and earlier settings still read", function()
+    local s = ReaderLayout.spec("normal")
+    local a = ReaderLayout.compute(PW, s)
+    local roomy = ReaderLayout.compute(PW, ReaderLayout.with(s, "page", "roomy"))
+    eq(a.font_size, roomy.font_size)
+    truthy(roomy.h_margins[1] > a.h_margins[1] and roomy.line_spacing > a.line_spacing, "roomy: wider margins, looser lines")
+    local compact = ReaderLayout.compute(PW, ReaderLayout.with(s, "page", "compact"))
+    truthy(compact.h_margins[1] < a.h_margins[1] and compact.line_spacing < a.line_spacing, "compact")
     local bigger = ReaderLayout.compute(PW, ReaderLayout.with(s, "pt", s.pt + 1))
     truthy(bigger.font_size > a.font_size, "bigger text")
-    local clamped = ReaderLayout.with(s, "pt", 99)
-    eq(clamped.pt, ReaderLayout.MAX_DELTA)
-    eq(ReaderLayout.compute(PW, ReaderLayout.with(s, "spacing", "loose")).line_spacing, 125)
+    eq(ReaderLayout.with(s, "pt", 99).pt, ReaderLayout.MAX_DELTA)
+    eq(ReaderLayout.compute(PW, ReaderLayout.with(s, "font", "Literata")).font, "Literata")
+    -- 0.2's presets and axes
+    eq(ReaderLayout.spec("paperback").page, "normal")
+    eq(ReaderLayout.spec("airy").page, "roomy")
+    eq(ReaderLayout.spec("large").pt, 4)
+    eq(ReaderLayout.spec({ spacing = "tight", margins = "narrow", pt = 1 }).page, "compact")
 end)
 
 test("book typography maps to KOReader's style tweaks", function()
-    local on, off = ReaderLayout.tweaks(ReaderLayout.spec("paperback"))
+    local on, off = ReaderLayout.tweaks(ReaderLayout.spec("normal"))
     truthy(H.contains(on, "text_align_most_justify") and H.contains(off, "text_align_most_left"), "justified")
     truthy(H.contains(on, "paragraph_indent") and H.contains(on, "paragraph_no_whitespace"), "book paragraphs")
-    local left = ReaderLayout.with(ReaderLayout.spec("paperback"), "align", "left")
+    local left = ReaderLayout.with(ReaderLayout.spec("normal"), "align", "left")
     left = ReaderLayout.with(left, "book_style", false)
     on, off = ReaderLayout.tweaks(left)
     truthy(H.contains(on, "text_align_most_left") and H.contains(off, "paragraph_indent"), "left, publisher paragraphs")

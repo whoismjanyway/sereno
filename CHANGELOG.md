@@ -12,6 +12,9 @@
 - **Shared painter** (`sereno/ui/painter.lua`) for every Sereno screen, with drawn symbols for what KOReader's icon set lacks.
 
 ### Changed
+- **Simpler Text panel:** Font (up to four, each written in its own typeface), Size and Page (Compact, Normal, Roomy). Alignment and paragraph style moved to Settings as two switches; the four 0.2 presets are gone (earlier settings carry over).
+- **Page numbers that don't move are on by default:** the reader's numbers come from KOReader's character-based page map, tuned to Sereno's page count, so they stay the same whatever the font, size or margins.
+- **Kindle-style locations:** *Page counts → Show locations* shows "Location 452 of 3,400" (one per 128 characters of text) on the home screen, in the bars and on the sleep screen.
 - The home screen now opens at start-up by default.
 - The *History* tab is now *Reading*.
 - Background counting redraws the home screen reliably, even when a cover lookup counted a book first.
@@ -45,6 +48,11 @@
 - **Settings:** page count method and reading speed.
 - **Languages:** Spanish translation.
 - **Development:** CI running all specs on LuaJIT, and layout previews for several devices.
+
+### Fixed (0.3)
+- **Home from a book no longer quits to the Kindle's own home screen.** When KOReader was started straight into a book, closing the reader left nothing open and KOReader quit. Sereno now leaves the book the way KOReader's own Home does, which opens the file manager and so Sereno's home screen.
+- **Rotation:** the home screen redoes its layout for the new shape.
+- **Chapter arrows:** the *previous chapter* arrow is dimmed at the first chapter (the *next* one was dimmed by mistake).
 
 ### Changed
 - **Readable reader margins:** Paperback now has 8 mm side margins (was 6 mm) and a 1.5 line height (was about 1.3), Airy 14 mm. The line height now follows crengine's real line height (1.36 em for 100 % in Noto Serif), and the line-length cap uses Noto Serif's measured width (0.52 em a character).

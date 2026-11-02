@@ -122,6 +122,8 @@ end
 function Cache.pageCount(r, method)
     if not r or not r.pages then return nil end
     method = method or "print"
+    -- Kindle-style locations: one every 128 characters of text
+    if method == "locations" and r.chars then return math.max(1, math.ceil(r.chars / 128)), "locations" end
     return r.pages[method] or r.pages.print, (r.pages[method] and method or "print")
 end
 

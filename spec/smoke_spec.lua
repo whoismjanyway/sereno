@@ -222,9 +222,16 @@ test("page counts menu walks and switches method", function()
     local p = Sereno:new{ ui = newUI("filemanager") }
     local menu = p:getPagesMenu()
     walk(menu, 0)
+    -- first: pages or Kindle-style locations
     menu[2].callback()
-    eq(p.settings:readSetting("page_method"), "downloaded")
+    eq(p.settings:readSetting("position"), "locations")
+    eq(p:homeOptions().page_method, "locations")
     menu[1].callback()
+    eq(p.settings:readSetting("position"), nil)
+    menu[4].callback()
+    eq(p.settings:readSetting("page_method"), "downloaded")
+    menu[3].callback()
+    eq(p.settings:readSetting("page_method"), "print")
 end)
 
 test("counting a whole folder", function()
@@ -248,7 +255,7 @@ end)
 
 H.describe("plugin smoke test: reading layout")
 
-test("a preset applies to the open book and becomes the default", function()
+test("reading settings: the panel, two switches, and the way back", function()
     local ui = newUI("reader")
     ui.rolling = {}
     ui.typeset = {}
@@ -257,44 +264,54 @@ test("a preset applies to the open book and becomes the default", function()
     ui.handleEvent = function(_self, e) events[#events + 1] = e end
     local p = Sereno:new{ ui = ui }
     S.global.copt_font_size = 30 -- the user's own default, to be kept aside
+    S.global.cre_font = "My Font"
     local menu = p:getReadingMenu()
     walk(menu, 0)
-    eq(menu[1].text, "Text & page panel…")
-    menu[3].callback() -- Paperback
-    local names = {}
-    for _i, e in ipairs(events) do names[#names + 1] = e.name end
-    eq(table.concat(names, ","), "SetFontSize,SetLineSpace,SetPageMargins")
-    truthy(S.global.style_tweaks and S.global.style_tweaks.paragraph_indent and S.global.style_tweaks.text_align_most_justify,
-        "book typography set as KOReader style tweaks")
-    truthy(ui.document.configurable.font_size and ui.document.configurable.h_page_margins, "config dialog values updated")
-    eq(#events[3].args[1], 4, "four margins in one event")
-    truthy(S.global.copt_font_size ~= 30 and S.global.copt_h_page_margins, "new default saved")
-    eq(p.settings:readSetting("reading_layout"), "paperback")
+    eq(menu[1].text, "Font, size and page…")
+    eq(#menu, 4, "the panel, justified, book paragraphs, defaults")
+    menu[2].callback() -- justified off
+    eq(p:currentSpec().align, "left")
+    truthy(S.global.style_tweaks and S.global.style_tweaks.text_align_most_left, "left alignment set as a KOReader style tweak")
+    truthy(S.global.copt_font_size ~= 30, "Sereno's layout became the default")
+    menu[2].callback()
+    eq(p:currentSpec().align, "justify")
     menu[#menu].callback() -- back to the user's previous defaults
     eq(S.global.copt_font_size, 30, "previous default restored")
     eq(S.global.copt_h_page_margins, nil)
     eq(S.global.style_tweaks.paragraph_indent, nil, "style tweaks restored")
+    eq(S.global.cre_font, "My Font")
 end)
 
-test("the text & page panel changes one thing per tap", function()
+test("the text panel: font, size and page, one re-flow per tap", function()
     local ui = newUI("reader")
     ui.rolling = {}
     ui.typeset = {}
     ui.document.configurable = {}
-    local applied_css = 0
-    ui.styletweak = { global_tweaks = { ["footnote-inpage_epub"] = true }, doc_tweaks = { paragraph_indent = false },
-        updateCssText = function() applied_css = applied_css + 1 end }
+    ui.font = { font_face = "Noto Serif" }
     local events = {}
     ui.handleEvent = function(_self, e) events[#events + 1] = e end
+    package.loaded["fontlist"] = { fontinfo = {
+        ["/f/NotoSerif-Regular.ttf"] = { { name = "Noto Serif" } },
+        ["/f/NotoSerif-Bold.ttf"] = { { name = "Noto Serif", bold = true } },
+        ["/f/Literata.ttf"] = { { name = "Literata" } },
+        ["/f/FreeSerif.ttf"] = { { name = "FreeSerif" } },
+        ["/f/Odd.ttf"] = { { name = "Odd Display" } },
+    } }
     local p = Sereno:new{ ui = ui }
     local items = {}
     p:addToMainMenu(items)
     eq(items.sereno_page.sorting_hint, "typeset")
+    local fonts = p:fontChoices()
+    eq(#fonts, 3, "only fonts worth offering, one entry each")
+    eq(fonts[1].name, "Literata")
     local panel = p:showPagePanel()
     eq(S.shown[#S.shown], panel)
     local bb = S.fakeBB()
     panel:paintTo(bb, 0, 0)
-    truthy(#bb.calls > 20, "panel drew its pages")
+    truthy(#bb.calls > 10, "panel drew")
+    local kinds = {}
+    for _i, n in ipairs(panel.nodes) do if n.kind == "tap" then kinds[n.action.key or n.action.type] = true end end
+    truthy(kinds.font and kinds.size and kinds.page and not kinds.align and not kinds.spacing, "only font, size and page")
     local function tapOn(pred)
         for _i, n in ipairs(panel.nodes) do
             if n.kind == "tap" and pred(n.action) then
@@ -303,55 +320,40 @@ test("the text & page panel changes one thing per tap", function()
             end
         end
     end
-    truthy(tapOn(function(a) return a.type == "set" and a.key == "margins" and a.value == "wide" end), "margins option")
-    eq(#events, 1)
-    eq(events[1].name, "SetPageMargins")
-    eq(p:currentSpec().margins, "wide")
-    eq(p.settings:readSetting("reading_layout"), "custom")
+    truthy(tapOn(function(a) return a.key == "page" and a.value == "roomy" end), "page option")
+    local names = {}
+    for _i, e in ipairs(events) do names[#names + 1] = e.name end
+    eq(table.concat(names, ","), "SetLineSpace,SetPageMargins", "margins and spacing together")
+    eq(p:currentSpec().page, "roomy")
     events = {}
-    tapOn(function(a) return a.type == "set" and a.key == "align" and a.value == "left" end)
-    eq(#events, 0, "alignment is a style tweak, not a re-layout event")
-    eq(applied_css, 1)
-    truthy(ui.styletweak.global_tweaks.text_align_most_left and not ui.styletweak.global_tweaks.text_align_most_justify, "left")
-    eq(ui.styletweak.doc_tweaks.paragraph_indent, nil, "per-book override cleared")
-    truthy(ui.styletweak.global_tweaks["footnote-inpage_epub"], "other tweaks kept")
+    truthy(tapOn(function(a) return a.key == "font" and a.value == "Literata" end), "font option")
+    eq(events[1].name, "SetFont")
+    eq(events[1].args[1], "Literata")
+    eq(S.global.cre_font, "Literata", "new books open in it too")
+    events = {}
     tapOn(function(a) return a.type == "size" and a.delta > 0 end)
     eq(events[1].name, "SetFontSize")
-    tapOn(function(a) return a.type == "preset" and a.id == "airy" end)
-    eq(p.settings:readSetting("reading_layout"), "airy")
     local before = #S.closed
     panel:onTap(nil, { pos = { x = 5, y = 5 } }) -- above the sheet
     truthy(#S.closed > before, "tap above the sheet closes it")
+    package.loaded["fontlist"] = nil
 end)
 
 test("the panel fits every screen without overlaps", function()
     local Panel = require("sereno/reader/panel")
     local Theme = require("sereno/ui/theme")
-    local Layout = require("sereno/home/layout")
     local ReaderLayout = require("sereno/reader/layout")
+    local fonts = { { name = "Literata" }, { name = "Noto Serif" }, { name = "FreeSerif" }, { name = "Noto Sans" } }
     for _i, scr in ipairs({ { 600, 800, 167 }, { 758, 1024, 212 }, { 1072, 1448, 300 }, { 1236, 1648, 300 }, { 1860, 2480, 300 }, { 1448, 1072, 300 } }) do
         local screen = { width = scr[1], height = scr[2], dpi = scr[3] }
         local t = Theme.new(screen)
-        local nodes, top = Panel.layout(t, ReaderLayout.compute(screen, "paperback"))
-        truthy(top > t.height * 0.2, scr[1] .. "x" .. scr[2] .. ": the sheet leaves the book visible (top " .. top .. ")")
-        for _j, n in ipairs(nodes) do
-            truthy(n.x >= 0 and n.y >= 0 and n.x + n.w <= t.width + 1 and n.y + n.h <= t.height + 1,
-                scr[1] .. "x" .. scr[2] .. " " .. tostring(n.id) .. " inside the screen")
-        end
+        local nodes, top = Panel.layout(t, ReaderLayout.compute(screen, "normal"), nil, fonts)
+        truthy(top > t.height * 0.25, scr[1] .. "x" .. scr[2] .. ": the sheet leaves the book visible (top " .. top .. ")")
+        local problems = require("sereno/home/layout").check(t, nodes)
+        eq(#problems, 0, table.concat(problems, "; "))
         local pages = 0
-        for _j, a in ipairs(nodes) do
-            if a.kind == "page" then
-                pages = pages + 1
-                for _k, b in ipairs(nodes) do
-                    if b ~= a and b.kind == "page" then
-                        truthy(a.x + a.w <= b.x or b.x + b.w <= a.x or a.y + a.h <= b.y or b.y + b.h <= a.y,
-                            a.id .. " overlaps " .. b.id)
-                    end
-                end
-            end
-        end
-        eq(pages, 10)
-        local _ = Layout
+        for _j, a in ipairs(nodes) do if a.kind == "page" then pages = pages + 1 end end
+        eq(pages, 3)
     end
 end)
 
@@ -416,6 +418,7 @@ end
 test("taps at the top or bottom show Sereno's bars instead of KOReader's menus", function()
     local ui, zones, page = readerUI()
     local p = Sereno:new{ ui = ui }
+    p.settings:delSetting("position")
     local z = zones()
     truthy(z and #z == 3, "touch zones registered")
     local by_id = {}
@@ -464,8 +467,9 @@ test("taps at the top or bottom show Sereno's bars instead of KOReader's menus",
     p.settings:saveSetting("reader_bars", true)
 end)
 
-test("Home in the bars closes the book", function()
+test("Home in the bars goes to Sereno's home, never out of KOReader", function()
     local ui, zones = readerUI()
+    ui.onHome = function() S.events[#S.events + 1] = "ReaderHome" end
     Sereno:new{ ui = ui }
     zones()[1].handler({})
     local chrome = S.shown[#S.shown]
@@ -473,7 +477,44 @@ test("Home in the bars closes the book", function()
         if n.kind == "tap" and n.action.type == "home" then chrome:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } }) end
     end
     S.runScheduled()
-    truthy(H.contains(S.events, "CloseReader"), "book closed")
+    truthy(H.contains(S.events, "ReaderHome"), "KOReader's own Home: closes the book and opens the file manager")
+    eq(H.contains(S.events, "CloseReader"), false, "never a bare close, which quits KOReader when it started in the book")
+end)
+
+test("locations, like a Kindle: one every 128 characters, from the character-based page map", function()
+    local ui = readerUI()
+    ui.pagemap = {
+        chars_per_synthetic_page = 1280,
+        wantsPageLabels = function() return true end,
+        getCurrentPageLabel = function() return "12", 12, 180 end,
+        getLastPageLabel = function() return "180" end,
+    }
+    local p = Sereno:new{ ui = ui }
+    p.settings:saveSetting("position", "locations")
+    local pos = p:readerPosition(40, 200)
+    eq(pos.kind, "locations")
+    eq(pos.now, "111", "page 12 starts at character 14,080: location 111")
+    eq(pos.total, "1,800")
+    eq(p:chromeCopy().page_of, "Location %s of %s")
+    p.settings:delSetting("position")
+    pos = p:readerPosition(40, 200)
+    eq(pos.kind, "pages")
+    eq(pos.now, "12")
+    eq(pos.total, "180", "the same numbers whatever the screen page")
+end)
+
+test("the home screen redoes its layout when the screen rotates", function()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    local home = p:showHome()
+    local Device = require("device")
+    local gw, gh = Device.screen.getWidth, Device.screen.getHeight
+    Device.screen.getWidth, Device.screen.getHeight = gh, gw
+    home:onSetDimensions()
+    eq(home.theme.width, 1448)
+    eq(home.theme.landscape, true)
+    Device.screen.getWidth, Device.screen.getHeight = gw, gh
+    home:onSetDimensions()
+    eq(home.theme.width, 1072)
 end)
 
 H.describe("plugin smoke test: settings and sleep screen")
