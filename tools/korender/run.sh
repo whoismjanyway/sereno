@@ -58,6 +58,9 @@ if [ ! -f "$RUNTIME/libs/libkoreader-lfs.so" ]; then
     gcc -O2 -shared -fPIC -I"$LUAJIT_INCLUDE" -o "$RUNTIME/libs/libkoreader-lfs.so" "$LFS_SRC/src/lfs.c"
 fi
 
+# Sereno puts its mark into KOReader's user icons folder; do the same here
+mkdir -p "$RUNTIME/icons"
+cp "$REPO/sereno.koplugin/icons/sereno.logo.svg" "$RUNTIME/icons/"
 cd "$RUNTIME"
 "$LUAJIT" "$REPO/tools/korender/render.lua" "$REPO" "$OUT" ${BOOKS:+"$BOOKS"} 2>&1 \
     | grep -v -e '^lib_' -e 'monolibtic' -e '^ffi\.' -e ' INFO '

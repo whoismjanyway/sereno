@@ -104,7 +104,13 @@ local function makeDevice(d)
         hasSystemFonts = function() return false end,
         isKindle = function() return false end,
         getPowerDevice = function()
-            return { getCapacity = function() return 82 end, isCharging = function() return false end }
+            -- what KOReader's widgets ask the power device for; anything else is "no"
+            return setmetatable({
+                getCapacity = function() return 82 end, getBatterySymbol = function() return "" end,
+                frontlightIntensity = function() return 14 end, isFrontlightOn = function() return true end,
+            }, { __index = function(_, k)
+                return function() if k:match("^get") then return 0 end return false end
+            end })
         end,
     }, { __index = function() return function() return false end end })
     return device
@@ -264,6 +270,39 @@ for _, d in ipairs(DEVICES) do
         painter:paint(bb, nodes)
         painter:free()
         writePGM(bb, string.format("%s/%s-controls.pgm", out_dir, d.id))
+        -- Sereno's sleep screen (portrait), with the book being read
+        do
+            local SleepLayout = require("sereno/sleep/layout")
+            local sp = Painter.new(home.theme, cover)
+            bb:fill(Blitbuffer.COLOR_WHITE)
+            local g = metrics[SAMPLE[1].path] or {}
+            sp:paint(bb, SleepLayout.layout(home.theme, { file = SAMPLE[1].path, title = g.title or "The Great Gatsby",
+                authors = g.authors and table.concat(g.authors, ", ") or "F. Scott Fitzgerald", percent = 0.38 },
+                { progress = "Page 68 of 179 · 38%", date = "Monday, 2 November", logo = repo .. "/sereno.koplugin/icons/sereno.logo.svg" }))
+            sp:free()
+            writePGM(bb, string.format("%s/%s-sleep.pgm", out_dir, d.id))
+        end
+        -- the settings: KOReader's own TouchMenu, Sereno's tab first, then KOReader's tabs
+        do
+            local ok, err = pcall(function()
+                local TouchMenu = require("ui/widget/touchmenu")
+                local CenterContainer = require("ui/widget/container/centercontainer")
+                local container = CenterContainer:new{ ignore = "height", dimen = Device.screen:getSize() }
+                local item = function(text) return { text = text, sub_item_table = { { text = "…" } } } end
+                local tabs = {
+                    { icon = "sereno.logo", item(_("Home screen")), item(_("Reader")), item(_("Sleep screen")),
+                      item(_("Tiered menus")), { text = _("Refresh budget"), separator = true }, { text = _("About Sereno") } },
+                    { icon = "appbar.filebrowser", item("…") }, { icon = "appbar.settings", item("…") },
+                    { icon = "appbar.tools", item("…") }, { icon = "appbar.search", item("…") }, { icon = "appbar.menu", item("…") },
+                }
+                local tm = TouchMenu:new{ width = d.width, tab_item_table = tabs, show_parent = container, last_index = 1 }
+                container[1] = tm
+                home:paintTo(bb, 0, 0)
+                container:paintTo(bb, 0, 0)
+                writePGM(bb, string.format("%s/%s-settings.pgm", out_dir, d.id))
+            end)
+            if not ok then print("settings render failed: " .. tostring(err)) end
+        end
         home:onCloseWidget()
         if Font.cleanup then Font:cleanup() end
     end

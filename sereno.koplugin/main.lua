@@ -30,6 +30,7 @@ local Browse = require("sereno/shell/browse")
 local ChromeLayout = require("sereno/reader/chrome")
 local ControlsLayout = require("sereno/controls/layout")
 local Overlay = require("sereno/ui/overlay")
+local SleepLayout = require("sereno/sleep/layout")
 local MetricsCache = require("sereno/metrics/cache")
 
 local DataStorage = require("datastorage")
@@ -48,6 +49,12 @@ local _ = require("sereno/l10n")
 local T = require("ffi/util").template
 
 local Screen = Device.screen
+-- the plugin's own folder (for its icons), whatever KOReader's install path
+local PLUGIN_DIR = (debug.getinfo(1, "S").source or ""):match("^@(.*)/main%.lua$") or "plugins/sereno.koplugin"
+local VERSION = (function()
+    local ok, meta = pcall(dofile, PLUGIN_DIR .. "/_meta.lua")
+    return ok and meta and meta.version or "?"
+end)()
 local PREFIXES = { "reader", "filemanager" }
 local TIER_NAMES = {
     [Tiers.READING] = _("Reading"),
@@ -98,6 +105,7 @@ function Sereno:init()
     self.order_file = OrderFile.new(DataStorage:getSettingsDir())
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
+    pcall(self.installLogo, self)
     if self:isEnabled() then
         -- Menus are built lazily on first open, so writing now is in time.
         self:applyTiers(false)
@@ -215,6 +223,9 @@ function Sereno:onDispatcherRegisterActions()
     Dispatcher:registerAction("sereno_show_home", {
         category = "none", event = "SerenoShowHome", title = _("Sereno: home screen"), general = true,
     })
+    Dispatcher:registerAction("sereno_settings", {
+        category = "none", event = "SerenoShowSettings", title = _("Sereno: settings"), general = true,
+    })
     Dispatcher:registerAction("sereno_controls", {
         category = "none", event = "SerenoShowControls", title = _("Sereno: quick controls"), general = true,
     })
@@ -241,12 +252,274 @@ end
 
 --- Suspend handling for the refresh coordinator
 
+--[[--
+Sleep and wake. KOReader draws its sleep screen *before* it tells plugins
+the device is going to sleep, so Sereno never draws over it: it only stops
+its clock, closes its sheets (so they don't greet you on wake), and
+prepares its own sleep image for the next time. On wake, the screen
+under the sleep screen is redrawn in full, without ghosting.
+]]
 function Sereno:onSuspend()
     if shared_refresh then shared_refresh:pause() end
+    for _i, key in ipairs({ "controls", "chrome" }) do
+        if session[key] then
+            UIManager:close(session[key])
+            session[key] = nil
+        end
+    end
+    if self:isSleepScreenOn() then UIManager:nextTick(function() self:renderSleepImage() end) end
 end
 
 function Sereno:onResume()
     if shared_refresh then shared_refresh:resume() end
+    if session.home and not self.ui.document then
+        session.home:build()
+        UIManager:setDirty(session.home, "full")
+    end
+end
+
+--- Sleep screen
+
+function Sereno:sleepDir()
+    return DataStorage:getSettingsDir() .. "/sereno-sleep"
+end
+
+--- Sereno's sleep screen is on when KOReader shows random images from Sereno's folder.
+function Sereno:isSleepScreenOn()
+    return G_reader_settings:readSetting("screensaver_type") == "random_image"
+        and G_reader_settings:readSetting("screensaver_dir") == self:sleepDir()
+end
+
+function Sereno:setSleepScreen(on)
+    if on then
+        if not self:isSleepScreenOn() then
+            self.settings:saveSetting("screensaver_backup", {
+                type = G_reader_settings:readSetting("screensaver_type") or false,
+                dir = G_reader_settings:readSetting("screensaver_dir") or false,
+            })
+        end
+        os.execute(string.format("mkdir -p %q", self:sleepDir()))
+        self:renderSleepImage()
+        G_reader_settings:saveSetting("screensaver_type", "random_image")
+        G_reader_settings:saveSetting("screensaver_dir", self:sleepDir())
+    else
+        local backup = self.settings:readSetting("screensaver_backup") or {}
+        if backup.type then G_reader_settings:saveSetting("screensaver_type", backup.type)
+        else G_reader_settings:saveSetting("screensaver_type", "disable") end
+        if backup.dir then G_reader_settings:saveSetting("screensaver_dir", backup.dir)
+        else G_reader_settings:delSetting("screensaver_dir") end
+        self.settings:delSetting("screensaver_backup")
+    end
+    self.settings:flush()
+end
+
+--- The book for the sleep screen: the last one opened, unless it's gone.
+function Sereno:sleepBook()
+    local file = self.ui.document and self.ui.document.file or G_reader_settings:readSetting("lastfile")
+    local metrics = file and MetricsService.peek(file)
+    local info = file and Library.bookInfo(file, metrics)
+    if not info then return nil end
+    local book = { file = file, title = info.title or file:match("([^/]+)%.[^.]+$"), percent = info.percent or 0 }
+    if self.ui.document and self.ui.document.getCurrentPage and self.ui.rolling then
+        local total = self.ui.document:getPageCount()
+        if total and total > 1 then book.percent = (self.ui.document:getCurrentPage() - 1) / (total - 1) end
+    end
+    book.authors = type(info.authors) == "table" and table.concat(info.authors, ", ") or info.authors
+    local total = metrics and MetricsCache.pageCount(metrics, self.settings:readSetting("page_method", "print"))
+    if total then book.page_total, book.page_now = total, math.max(1, math.floor(book.percent * total + 0.5)) end
+    return book
+end
+
+--[[--
+Draws Sereno's sleep screen into <settings>/sereno-sleep/sleep.png, in
+portrait (KOReader shows sleep screens in portrait). Returns the path.
+]]
+function Sereno:renderSleepImage()
+    local ok, err = pcall(function()
+        local Blitbuffer = require("ffi/blitbuffer")
+        local Painter = require("sereno/ui/painter")
+        local Theme = require("sereno/ui/theme")
+        local w, h = Screen:getWidth(), Screen:getHeight()
+        if w > h then w, h = h, w end
+        local theme = Theme.new{ width = w, height = h, dpi = Screen:getDPI(),
+            scale_by_size = function(n) return Screen:scaleBySize(n) end }
+        local book = self:sleepBook()
+        local copy = { logo = PLUGIN_DIR .. "/icons/sereno.logo.svg", date = os.date("%Y-%m-%d") }
+        local d = os.date("*t")
+        local frame = require("sereno/home/presenter").frame(_, {}, "home", d)
+        copy.date = frame.date
+        if book then
+            local pct = math.floor(book.percent * 100 + 0.5)
+            copy.progress = book.page_total and T(_("Page %1 of %2 · %3%"), book.page_now, book.page_total, pct)
+                or T(_("%1% read"), pct)
+        end
+        local bb = Blitbuffer.new(w, h, Blitbuffer.TYPE_BB8)
+        bb:fill(Blitbuffer.COLOR_WHITE)
+        local painter = Painter.new(theme, function(file) return Library.cover(file, MetricsService.peek(file)) end)
+        painter:paint(bb, SleepLayout.layout(theme, book, copy))
+        painter:free()
+        os.execute(string.format("mkdir -p %q", self:sleepDir()))
+        bb:writePNG(self:sleepDir() .. "/sleep.png")
+        bb:free()
+    end)
+    if not ok then logger.warn("Sereno: sleep screen image failed", err) end
+    return ok and (self:sleepDir() .. "/sleep.png") or nil
+end
+
+function Sereno:getSleepMenu()
+    local ok, koreader_menu = pcall(require, "ui/elements/screensaver_menu")
+    local menu = {
+        {
+            text = _("Sereno: cover and progress"),
+            help_text = _("While the device sleeps, show the book you're reading: its cover, title and how far you are. Uses KOReader's own sleep screen (random image from Sereno's folder), so turning it off restores your previous choice."),
+            checked_func = function() return self:isSleepScreenOn() end,
+            callback = function() self:setSleepScreen(not self:isSleepScreenOn()) end,
+            separator = true,
+        },
+    }
+    if ok and koreader_menu then
+        menu[#menu + 1] = {
+            text = _("KOReader's sleep screen options"),
+            help_text = _("Covers, your own images and folders, messages, reading progress: all of KOReader's sleep screen settings, unchanged."),
+            sub_item_table = koreader_menu,
+        }
+    end
+    return menu
+end
+
+--- Unified settings (Sereno's own tab, then KOReader's tabs)
+
+--- KOReader looks up tab icons by name, in its user icons folder too: Sereno's
+-- mark is put there once. Until KOReader restarts, a stock icon stands in.
+function Sereno:installLogo()
+    local dir = DataStorage:getDataDir() .. "/icons"
+    local dst = dir .. "/sereno.logo.svg"
+    local src = PLUGIN_DIR .. "/icons/sereno.logo.svg"
+    local f = io.open(dst, "r")
+    if f then f:close() return end
+    os.execute(string.format("mkdir -p %q && cp %q %q", dir, src, dst))
+end
+
+function Sereno:logoIcon()
+    local ok, IconWidget = pcall(require, "ui/widget/iconwidget")
+    if ok and IconWidget then
+        local okw, w = pcall(IconWidget.new, IconWidget, { icon = "sereno.logo", width = 8, height = 8 })
+        if okw and w and w.file and w.file:find("sereno", 1, true) then return "sereno.logo" end
+    end
+    return "home"
+end
+
+function Sereno:getSettingsTab()
+    local tab = {
+        icon = self:logoIcon(),
+        remember = false,
+        {
+            text = _("Home screen"),
+            sub_item_table_func = function()
+                return {
+                    { text = _("Open the home screen"), callback = function(tm) if tm then tm:closeMenu() end self:showHome() end },
+                    {
+                        text = _("Start with the home screen"),
+                        checked_func = function() return self.settings:nilOrTrue("home_at_start") end,
+                        callback = function()
+                            self.settings:saveSetting("home_at_start", not self.settings:nilOrTrue("home_at_start"))
+                            self.settings:flush()
+                        end,
+                    },
+                    {
+                        text = _("Home screen after closing a book"),
+                        checked_func = function() return self.settings:nilOrTrue("home_after_reader") end,
+                        callback = function()
+                            self.settings:saveSetting("home_after_reader", not self.settings:nilOrTrue("home_after_reader"))
+                            self.settings:flush()
+                        end,
+                    },
+                }
+            end,
+        },
+        {
+            text = _("Reader"),
+            sub_item_table_func = function()
+                local items = {}
+                if self.ui.document then
+                    items[#items + 1] = { text = _("Text & page panel…"),
+                        callback = function(tm) if tm then tm:closeMenu() end self:showPagePanel() end }
+                end
+                items[#items + 1] = { text = _("Reading layout"), sub_item_table_func = function() return self:getReadingMenu() end }
+                items[#items + 1] = {
+                    text = _("Sereno's bars in books"),
+                    checked_func = function() return self.settings:nilOrTrue("reader_bars") end,
+                    callback = function()
+                        self.settings:saveSetting("reader_bars", not self.settings:nilOrTrue("reader_bars"))
+                        self.settings:flush()
+                    end,
+                }
+                items[#items + 1] = { text = _("Page counts"), sub_item_table_func = function() return self:getPagesMenu() end }
+                return items
+            end,
+        },
+        {
+            text = _("Sleep screen"),
+            sub_item_table_func = function() return self:getSleepMenu() end,
+        },
+        {
+            text = _("Tiered menus"),
+            sub_item_table_func = function() return self:getTiersMenu() end,
+        },
+        {
+            text = _("Refresh budget"),
+            keep_menu_open = true,
+            callback = function() self:showRefreshStats() end,
+            separator = true,
+        },
+        {
+            text = _("About Sereno"),
+            keep_menu_open = true,
+            callback = function()
+                UIManager:show(InfoMessage:new{
+                    text = T(_("Sereno %1\nA calmer KOReader: home screen, library, quick controls, reading layouts and print-like page counts, without patching KOReader.\n\ngithub.com/whoismjanyway/sereno"), VERSION),
+                })
+            end,
+        },
+    }
+    return tab
+end
+
+--[[--
+Sereno's settings next to KOReader's, like one settings app: the first
+tab (Sereno's mark) holds Sereno's options, the following tabs are
+KOReader's own menu, unchanged, so every KOReader setting still works from
+here and nothing Sereno does is mixed into KOReader's pages.
+]]
+function Sereno:showSettings(tab_index)
+    local menu = self.ui.menu
+    local tabs = { self:getSettingsTab() }
+    if menu then
+        if menu.tab_item_table == nil and menu.setUpdateItemTable then menu:setUpdateItemTable() end
+        for _i, t in ipairs(menu.tab_item_table or {}) do tabs[#tabs + 1] = t end
+    end
+    local CenterContainer = require("ui/widget/container/centercontainer")
+    local TouchMenu = require("ui/widget/touchmenu")
+    local container = CenterContainer:new{ ignore = "height", dimen = Screen:getSize() }
+    local touch = TouchMenu:new{
+        width = Screen:getWidth(),
+        last_index = tab_index or 1,
+        tab_item_table = tabs,
+        show_parent = container,
+        close_callback = function()
+            UIManager:close(container)
+            session.settings = nil
+        end,
+    }
+    container[1] = touch
+    session.settings = container
+    UIManager:show(container)
+    return touch, tabs
+end
+
+function Sereno:onSerenoShowSettings()
+    self:showSettings()
+    return true
 end
 
 --- Home screen
@@ -298,6 +571,7 @@ function Sereno:showHome(tab)
     session.home = home
     UIManager:show(home)
     self:countMissing(home)
+    if self:isSleepScreenOn() then UIManager:scheduleIn(2, function() self:renderSleepImage() end) end
     return home
 end
 
@@ -375,6 +649,8 @@ function Sereno:onHomeAction(action, home)
 end
 
 function Sereno:onCloseDocument()
+    -- the sleep screen shows where you stopped
+    if self.ui.document and self:isSleepScreenOn() then self:renderSleepImage() end
     -- the file manager instance created next will show the home screen
     if self.ui.document then session.home_after_reader = true end
 end
@@ -421,7 +697,7 @@ function Sereno:controlsCopy()
         restart = _("Restart"), sleep = _("Sleep"),
         wifi_on = _("Wi-Fi on"), wifi_off = _("Wi-Fi off"),
         brightness = _("Brightness: %d"), warmth = _("Warmth: %d"),
-        koreader_menu = _("KOReader menu"), files = _("File browser"),
+        koreader_menu = _("Settings"), files = _("File browser"),
     }
 end
 
@@ -469,9 +745,7 @@ function Sereno:onControlsAction(action, ges, overlay)
         if action.id == "warmth" then powerd:setWarmth(value) else powerd:setIntensity(value) end
         return true
     elseif action.type == "koreader_menu" then
-        later(function()
-            if self.ui.menu and self.ui.menu.onShowMenu then self.ui.menu:onShowMenu() end
-        end)
+        later(function() self:showSettings() end)
     elseif action.type == "files" then
         -- KOReader's own file browser, without Sereno's home on top
         later(function()
@@ -599,7 +873,7 @@ function Sereno:onChromeAction(action, ges, overlay)
     elseif t == "search" then
         later(function() if ui.search then ui.search:onShowFulltextSearchInput() end end)
     elseif t == "menu" then
-        later(function() if ui.menu then ui.menu:onShowMenu() end end)
+        later(function() self:showSettings() end)
     elseif t == "controls" then
         later(function() self:showControls() end)
     elseif t == "prev_chapter" or t == "next_chapter" or t == "seek" then
@@ -773,6 +1047,17 @@ function Sereno:getMainMenu()
             separator = true,
         },
         {
+            text = _("Settings (Sereno and KOReader)"),
+            callback = function(touchmenu_instance)
+                if touchmenu_instance then touchmenu_instance:closeMenu() end
+                self:showSettings()
+            end,
+        },
+        {
+            text = _("Sleep screen"),
+            sub_item_table_func = function() return self:getSleepMenu() end,
+        },
+        {
             text = _("Sereno's bars in books"),
             help_text = _("A tap at the top or bottom of a page shows Sereno's bars, and a swipe down from the top the quick controls, instead of KOReader's menus. KOReader's menu stays one tap away (⋮)."),
             checked_func = function() return self.settings:nilOrTrue("reader_bars") end,
@@ -834,6 +1119,9 @@ function Sereno:applyPageNumbers(force)
 end
 
 function Sereno:onReaderReady()
+    if self:isSleepScreenOn() then
+        UIManager:scheduleIn(3, function() if self.ui.document then self:renderSleepImage() end end)
+    end
     if not self.settings:isTrue("reader_page_numbers") then return end
     if self.ui.doc_settings and self.ui.doc_settings:readSetting("sereno_page_numbers") then return end
     -- after the first page is on screen, so opening the book isn't slowed down

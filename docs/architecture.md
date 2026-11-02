@@ -30,6 +30,7 @@ sereno.koplugin/
     ├── shell/layout.lua       ✱ their grid of covers, title row, pager
     ├── controls/layout.lua    ✱ quick controls sheet
     ├── reader/chrome.lua      ✱ the reader's top and bottom bars
+    ├── sleep/layout.lua       ✱ Sereno's sleep screen image
     ├── reader/
     │   ├── layout.lua         ✱ the page in pt/mm (size, spacing, margins, alignment, paragraphs) → KOReader settings and style tweaks
     │   ├── panel.lua          ✱ the Text & page panel as positioned nodes, and its miniature pages
@@ -56,6 +57,9 @@ sereno.koplugin/
 | Quick control actions | `UIManager:broadcastEvent` of KOReader's events (`ToggleWifi`, `ToggleNightMode`, `IterateRotation`, `Restart`, `RequestSuspend`), `powerd:setIntensity` / `setWarmth` |
 | Reader navigation | `GotoPage`, `ReaderToc` chapters, `ReaderLink` location stack, `ReaderPageMap` labels |
 | Collections | `ReadCollection` |
+| Unified settings | A `TouchMenu` with Sereno's tab followed by `ui.menu.tab_item_table` (KOReader's own tabs) |
+| Settings tab icon | `sereno.logo.svg` copied into KOReader's user icons folder (`<data>/icons`) |
+| Sleep screen | `screensaver_type = "random_image"` with `screensaver_dir` = Sereno's folder (previous values kept and restored); `ui/elements/screensaver_menu` for KOReader's own options; `onSuspend` / `onResume` |
 | Reader menu entry | `menu_items.sereno_page` with `sorting_hint = "typeset"`, next to KOReader's own font settings |
 | Page layout | `SetFontSize`, `SetLineSpace`, `SetPageMargins` events; `ReaderStyleTweak.global_tweaks` and `updateCssText`; `copt_*` and `style_tweaks` in `G_reader_settings` |
 | Home screen | A regular `InputContainer` shown with `UIManager:show` |

@@ -131,4 +131,14 @@ for dev, name, _dpi in DEVICES:
         out.paste(r, (50, 50))
         out.save(os.path.join(dst, f"shell-{dev}.png"), optimize=True)
 
+# settings and the sleep screen
+for dev, name, _dpi in DEVICES:
+    shots = [(f"{dev}-settings.png", "Settings"), (f"{dev}-sleep.png", "Sleep screen")]
+    tiles = [framed(os.path.join(src, f), label, name) for f, label in shots if os.path.exists(os.path.join(src, f))]
+    if len(tiles) == len(shots):
+        r = row(tiles)
+        out = Image.new("RGB", (r.width + 100, r.height + 100), BG)
+        out.paste(r, (50, 50))
+        out.save(os.path.join(dst, f"settings-{dev}.png"), optimize=True)
+
 print("composed into", dst)

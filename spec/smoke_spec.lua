@@ -476,6 +476,73 @@ test("Home in the bars closes the book", function()
     truthy(H.contains(S.events, "CloseReader"), "book closed")
 end)
 
+H.describe("plugin smoke test: settings and sleep screen")
+
+test("one settings screen: Sereno's tab first, then KOReader's own tabs unchanged", function()
+    local ui = newUI("filemanager")
+    local ko_tabs = { { icon = "appbar.settings", { text = "KOReader item" } }, { icon = "appbar.tools", { text = "Tools" } } }
+    ui.menu.tab_item_table = ko_tabs
+    local p = Sereno:new{ ui = ui }
+    local _touch, tabs = p:showSettings()
+    eq(#tabs, 3)
+    eq(tabs[2], ko_tabs[1], "KOReader's tab, the same table")
+    eq(tabs[3], ko_tabs[2])
+    local labels = {}
+    for _i, item in ipairs(tabs[1]) do labels[#labels + 1] = item.text end
+    local all = table.concat(labels, "|")
+    truthy(all:find("Home screen", 1, true) and all:find("Sleep screen", 1, true) and all:find("Reader", 1, true), all)
+    walk(tabs[1], 0)
+    -- the quick controls and the reader's ⋮ open it
+    local home = p:showHome()
+    local controls = p:showControls()
+    for _i, n in ipairs(controls.nodes) do
+        if n.kind == "tap" and n.action.type == "koreader_menu" then controls:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } }) end
+    end
+    local before = #S.touchmenus
+    S.runScheduled()
+    truthy(#S.touchmenus > before, "settings opened from the quick controls")
+    local _ = home
+end)
+
+test("Sereno's sleep screen uses KOReader's own, and gives it back", function()
+    setupLibrary()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    S.global.screensaver_type = "cover"
+    S.global.screensaver_dir = "/my/wallpapers"
+    S.global.lastfile = S.settings_dir .. "/books/novel.epub"
+    local menu = p:getSleepMenu()
+    eq(#menu, 2)
+    eq(menu[2].sub_item_table[1].text, "Wallpaper", "KOReader's own sleep screen menu, unchanged")
+    menu[1].callback()
+    truthy(p:isSleepScreenOn())
+    eq(S.global.screensaver_type, "random_image")
+    eq(S.global.screensaver_dir, p:sleepDir())
+    truthy(S.png_written[#S.png_written]:find("sereno%-sleep/sleep%.png$"), "image drawn")
+    -- KOReader draws its sleep screen first; Sereno only closes its sheets and redraws for next time
+    p:showControls()
+    p:onSuspend()
+    eq(S.closed[#S.closed].name, "sereno_overlay", "sheets closed before sleeping")
+    local n = #S.png_written
+    S.runScheduled()
+    truthy(#S.png_written > n, "next sleep image prepared")
+    p:onResume()
+    menu[1].callback()
+    eq(p:isSleepScreenOn(), false)
+    eq(S.global.screensaver_type, "cover", "the user's choice is back")
+    eq(S.global.screensaver_dir, "/my/wallpapers")
+end)
+
+test("a user's own sleep screen is left alone", function()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    S.global.screensaver_type = "random_image"
+    S.global.screensaver_dir = "/my/wallpapers"
+    local n = #S.png_written
+    p:onSuspend()
+    S.runScheduled()
+    eq(#S.png_written, n, "nothing drawn")
+    eq(S.global.screensaver_dir, "/my/wallpapers")
+end)
+
 H.describe("plugin smoke test: undo")
 test("the user's own order file survives enable/disable", function()
     local p = Sereno:new{ ui = newUI("filemanager") }

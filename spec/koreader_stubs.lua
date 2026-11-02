@@ -104,8 +104,28 @@ for _, name in ipairs({
 }) do widgetModule(name) end
 stub("ui/font", { getFace = function(_, name, size) return { name = name, size = size, orig_size = size } end })
 stub("ui/size", { border = { thin = 1, default = 2 }, padding = { default = 5, small = 2 }, margin = { default = 5 }, span = { horizontal_default = 10 } })
+S.png_written = {}
 stub("ffi/blitbuffer", { COLOR_BLACK = "black", COLOR_WHITE = "white", COLOR_GRAY = "gray",
-    COLOR_DARK_GRAY = "darkgray", COLOR_LIGHT_GRAY = "lightgray", COLOR_GRAY_4 = "gray4" })
+    COLOR_DARK_GRAY = "darkgray", COLOR_LIGHT_GRAY = "lightgray", COLOR_GRAY_4 = "gray4", TYPE_BB8 = 8,
+    new = function(w, h)
+        local bb = S.fakeBB()
+        bb.w, bb.h = w, h
+        bb.writePNG = function(_self, path)
+            S.png_written[#S.png_written + 1] = path
+            local f = io.open(path, "wb")
+            if f then f:write("PNG") f:close() end
+        end
+        bb.free = function() end
+        return bb
+    end,
+})
+S.touchmenus = {}
+stub("ui/widget/touchmenu", { new = function(_, o)
+    S.touchmenus[#S.touchmenus + 1] = o
+    o.closeMenu = function(self) if self.close_callback then self.close_callback() end end
+    return o
+end })
+stub("ui/elements/screensaver_menu", { { text = "Wallpaper" }, { text = "Sleep screen message" } })
 stub("ui/gesturerange", { new = function(_, o) return o end })
 stub("libs/libkoreader-lfs", {
     attributes = function(p, key)

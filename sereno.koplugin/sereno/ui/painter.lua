@@ -15,6 +15,7 @@ Node kinds:
                                             moon, sun, power, restart, chevron_down,
                                             chevron_up, folder, dots
   slider  { fraction, ticks = {0..1} }   -- track, fill, knob, chapter ticks
+  image   { file }                       -- an image file (Sereno's mark), scaled to fit
   page    -- a miniature page (sereno/reader/panel.lua)
   tap     -- invisible
 ]]
@@ -261,6 +262,16 @@ function Painter:paint(bb, nodes, ox, oy)
                 self.widgets[node] = w
             end
             w:paintTo(bb, nx, ny)
+        elseif kind == "image" then
+            if node.file then
+                local ok, img = pcall(ImageWidget.new, ImageWidget, { file = node.file, width = node.w, height = node.h,
+                    scale_factor = 0, alpha = true })
+                if ok and img then
+                    local size = img:getSize()
+                    img:paintTo(bb, nx + math.floor((node.w - size.w) / 2), ny + math.floor((node.h - size.h) / 2))
+                    img:free()
+                end
+            end
         elseif kind == "glyph" then
             self:paintGlyph(bb, nx, ny, node)
         elseif kind == "rule" then

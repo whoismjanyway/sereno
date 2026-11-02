@@ -86,6 +86,21 @@ for _i, scr in ipairs(SCREENS) do
     end)
 end
 
+test("the sleep screen fits every screen", function()
+    local SleepLayout = require("sereno/sleep/layout")
+    for _i, scr in ipairs(SCREENS) do
+        local w, h = scr[2], scr[3]
+        if w > h then w, h = h, w end
+        local t = Theme.new{ width = w, height = h, dpi = scr[4] }
+        for _j, book in ipairs({ { file = "/b/x.epub", title = "The Great Gatsby", authors = "F. Scott Fitzgerald", percent = 0.38 }, false }) do
+            local nodes = SleepLayout.layout(t, book or nil, { progress = "Page 68 of 179 · 38%", date = "Monday, 2 November", logo = "x.svg" })
+            local inner = {}
+            for _k, n in ipairs(nodes) do if n.id ~= "paper" then inner[#inner + 1] = n end end
+            fits(scr[1] .. " sleep", t, inner)
+        end
+    end
+end)
+
 test("search matches every word, in any case", function()
     truthy(Browse.matches("great gatsby", "The Great Gatsby", "Fitzgerald", "/b/x.epub"))
     truthy(Browse.matches("FITZ", "The Great Gatsby", "F. Scott Fitzgerald", "/b/x.epub"))

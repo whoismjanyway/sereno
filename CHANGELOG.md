@@ -6,6 +6,9 @@
 - **A complete shell:** the tab bar's Library, Reading, Collections and Search open Sereno screens instead of KOReader's file browser. The Library shows folders as tiles and books as covers, with a page of covers per screen (swipe to turn) and sorting by title, author or date. Reading lists books in progress first. Collections show KOReader's collections and Favorites. Search looks through titles, authors and file names.
 - **Quick controls:** swipe down from the top edge (home, library or book) for Wi-Fi, night mode, the light, rotation, restart and sleep, brightness and warmth sliders, and buttons to KOReader's menu and file browser.
 - **Bars in the book:** a tap at the top or bottom of a page shows a toolbar (Home, Text & page, contents, bookmarks, search, KOReader's menu) and a bottom bar with the chapter, the page in Sereno's numbers, a progress slider with chapter marks, chapter skips and *Back to page …* after a jump. Registered as touch zones before KOReader's own menu zones; one setting turns it off.
+- **One settings screen:** Sereno's tab (with its mark) first, then KOReader's own menu tabs, unchanged. Opened from the quick controls (*Settings*), ⋮ in a book, a gesture, or Settings → Sereno.
+- **Sleep screen:** Sereno's sheets close and its clock stops before sleep, and the screen is redrawn in full on wake, so KOReader's sleep screens show cleanly. A new optional *Sereno: cover and progress* sleep screen uses KOReader's own folder mode and restores the previous choice when turned off. KOReader's sleep screen menu is reachable from Sereno's settings.
+- **Logo:** an open book drawn in one stroke, used as the settings tab icon, on the sleep screen and in the README.
 - **Shared painter** (`sereno/ui/painter.lua`) for every Sereno screen, with drawn symbols for what KOReader's icon set lacks.
 
 ### Changed

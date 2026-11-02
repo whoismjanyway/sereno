@@ -42,6 +42,21 @@ return {
     ["Wi-Fi"] = "Wi-Fi",
     ["Wi-Fi off"] = "Wi-Fi apagado",
     ["Wi-Fi on"] = "Wi-Fi encendido",
+    ["About Sereno"] = "Acerca de Sereno",
+    ["Covers, your own images and folders, messages, reading progress: all of KOReader's sleep screen settings, unchanged."] =
+        "Portadas, tus propias imágenes y carpetas, mensajes, progreso de lectura: todas las opciones de pantalla de reposo de KOReader, sin cambios.",
+    ["KOReader's sleep screen options"] = "Opciones de pantalla de reposo de KOReader",
+    ["Open the home screen"] = "Abrir la pantalla de inicio",
+    ["Reader"] = "Lector",
+    ["Sereno %1\nA calmer KOReader: home screen, library, quick controls, reading layouts and print-like page counts, without patching KOReader.\n\ngithub.com/whoismjanyway/sereno"] =
+        "Sereno %1\nUn KOReader más sereno: pantalla de inicio, biblioteca, controles rápidos, diseños de lectura y recuentos de páginas como en papel, sin modificar KOReader.\n\ngithub.com/whoismjanyway/sereno",
+    ["Sereno: cover and progress"] = "Sereno: portada y progreso",
+    ["Sereno: settings"] = "Sereno: ajustes",
+    ["Settings"] = "Ajustes",
+    ["Settings (Sereno and KOReader)"] = "Ajustes (Sereno y KOReader)",
+    ["Sleep screen"] = "Pantalla de reposo",
+    ["While the device sleeps, show the book you're reading: its cover, title and how far you are. Uses KOReader's own sleep screen (random image from Sereno's folder), so turning it off restores your previous choice."] =
+        "Mientras el dispositivo duerme, muestra el libro que estás leyendo: su portada, título y cuánto llevas. Usa la pantalla de reposo de KOReader (imagen aleatoria de la carpeta de Sereno), así que al desactivarla vuelve tu elección anterior.",
     ["Airy"] = "Aireado",
     ["%d mm margins · %d lines a page · applies to new books too"] = "márgenes de %d mm · %d líneas por página · también para libros nuevos",
     ["about %d characters a line"] = "unos %d caracteres por línea",

@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/brand/sereno-logo.svg" alt="Sereno" width="300"></p>
+
 # Sereno
 
 **A calmer interface for [KOReader](https://koreader.rocks), without patching KOReader.**
@@ -6,6 +8,8 @@ Sereno is a KOReader plugin that replaces the interface you see every day:
 
 - **A complete shell:** Home, Library, Reading, Collections and Search behind one tab bar. You never fall back into KOReader's file browser unless you ask for it.
 - **Quick controls:** swipe down from the top edge for Wi-Fi, night mode, the light, rotation, restart, sleep, and brightness and warmth sliders.
+- **One settings screen:** Sereno's own tab (the book mark) next to all of KOReader's tabs, unchanged, so every KOReader option still works and nothing Sereno adds gets mixed into KOReader's pages.
+- **Sleep screens that keep working:** KOReader's own sleep screen options (covers, your images and folders, messages) are untouched, and Sereno adds an optional cover-and-progress sleep screen.
 - **Bars in the book:** tap the top or bottom of a page for a toolbar (Home, text & page, contents, bookmarks, search, KOReader's menu) and a progress bar with chapter marks, chapter skips and *Back to page …*.
 - **A contextual home screen** designed from the physical size of your screen, not its pixel count.
 - **Print-like page counts, word counts and readability** for every book in your library, computed without opening the books.
@@ -45,6 +49,14 @@ Sereno is a KOReader plugin that replaces the interface you see every day:
 Everything goes through KOReader's public extension points: the bars are touch zones registered on the reader before KOReader's menu zones, the quick controls send KOReader's own events (`ToggleWifi`, `ToggleNightMode`, `IterateRotation`, …), and the shell is a full-screen window over the file manager. Turn off *Settings → Sereno → Sereno's bars in books* to get KOReader's menus back.
 
 ![The same screens on a 6" Kindle](docs/images/shell/shell-kindle-basic.png)
+
+### Settings and sleep screen
+
+Open **Settings** from the quick controls (or ⋮ in a book). The first tab, with Sereno's mark, holds Sereno's options: Home screen, Reader, Sleep screen, Tiered menus, About. The tabs after it are KOReader's own menu, exactly as KOReader builds it.
+
+**Sleep screen.** Sereno never draws over KOReader's sleep screen: KOReader draws it before it tells plugins the device is going to sleep. Sereno only pauses its clock and closes its sheets, then redraws in full on wake. *Sleep screen → Sereno: cover and progress* shows the book you're reading, with its cover, title and progress. It uses KOReader's own "random image from a folder" mode on a folder Sereno keeps up to date, so turning it off gives you back the sleep screen you had. *KOReader's sleep screen options* is KOReader's own menu.
+
+![Settings with Sereno's tab first, and Sereno's sleep screen](docs/images/shell/settings-kindle-basic.png)
 
 ## Why another interface plugin?
 
@@ -189,7 +201,7 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
 Covers come from KOReader's CoverBrowser cache when that plugin is on. Otherwise Sereno renders the cover image stored inside the EPUB itself, keeping at most 16 in memory. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
 
 > **Status:** 0.3, early. **It has not yet been tried on a real device.** What has been checked:
-> - **Specs:** 174 of them, run on LuaJIT with stubs of KOReader's modules.
+> - **Specs:** 179 of them, run on LuaJIT with stubs of KOReader's modules.
 > - **Real widget code:** the home screen is also drawn by KOReader's own code (blitbuffer, FreeType fonts, TextBoxWidget, IconWidget) on every CI run, with `tools/korender`.
 > - **Previews:** layout previews for several devices. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
