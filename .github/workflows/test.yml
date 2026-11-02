@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LuaJIT and unzip
+        run: sudo apt-get update && sudo apt-get install -y luajit unzip
+
+      - name: Fetch KOReader (default menus)
+        run: git clone --depth 1 https://github.com/koreader/koreader.git ../koreader
+
+      - name: Build a real book for page-count checks
+        run: |
+          git clone --depth 1 https://github.com/standardebooks/f-scott-fitzgerald_the-great-gatsby.git ../gatsby
+          mkdir -p ../books
+          python3 tools/build_epub.py ../gatsby/src ../books/f-scott-fitzgerald_the-great-gatsby.epub
+
+      - name: Run specs
+        env:
+          KOREADER_DIR: ../koreader
+          SERENO_BOOKS: ../books
+        run: luajit spec/run.lua
+
+      - name: Syntax check with LuaJIT
+        run: |
+          for f in $(find sereno.koplugin -name '*.lua'); do
+            luajit -bl "$f" > /dev/null || { echo "syntax error in $f"; exit 1; }
+          done
