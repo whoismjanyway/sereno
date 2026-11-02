@@ -186,10 +186,26 @@ stub("document/documentregistry", {
     hasProvider = function(_, p) return p:match("%.epub$") or p:match("%.pdf$") or p:match("%.cbz$") end,
     openDocument = function() return { getPageCount = function() return 42 end, close = function() end } end,
 })
+-- Like KOReader's ffi/archiver: an entry can only be extracted once the
+-- archive has been iterated (seek() looks names up in what was iterated).
+S.archiver_iterations = 0
 stub("ffi/archiver", { Reader = {
-    new = function(self) return setmetatable({}, { __index = self }) end,
+    new = function(self) return setmetatable({ entries = {} }, { __index = self }) end,
     open = function(self, path) self.path = path return io.open(path, "rb") ~= nil end,
+    iterate = function(self)
+        S.archiver_iterations = S.archiver_iterations + 1
+        local p = io.popen(string.format("unzip -Z1 %q 2>/dev/null", self.path), "r")
+        local names = {}
+        for line in p:lines() do names[#names + 1] = line end
+        p:close()
+        local i = 0
+        return function()
+            i = i + 1
+            if names[i] then self.entries[names[i]] = true return { path = names[i] } end
+        end, self
+    end,
     extractToMemory = function(self, name)
+        if not self.entries[name] then return nil end
         local p = io.popen(string.format("unzip -p %q %q 2>/dev/null", self.path, name), "r")
         local d = p:read("*a"); p:close()
         return d ~= "" and d or nil

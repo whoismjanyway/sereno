@@ -1165,20 +1165,64 @@ screen. Publisher page numbers, when the book has them, are kept unless
 ]]
 function Sereno:applyPageNumbers(force)
     local pm = self.ui.pagemap
-    if not (self.ui.document and self.ui.rolling and pm and pm.setSyntheticPagesNumber) then return false, "unsupported" end
+    local doc = self.ui.document
+    if not (doc and self.ui.rolling and pm) then return false, "unsupported" end
+    if not (pm.setSyntheticPagesNumber or doc.buildSyntheticPageMap) then return false, "unsupported" end
     if pm.has_pagemap_document_provided and not force then return false, "publisher" end
-    local metrics = MetricsService.get(self.ui.document.file)
-    local pages = metrics and MetricsCache.pageCount(metrics, self.settings:readSetting("page_method", "print"))
+    local metrics, err = MetricsService.get(doc.file)
+    if not metrics then return false, err or "no_count" end
+    local method = self.settings:readSetting("page_method", "print")
+    local pages = MetricsCache.pageCount(metrics, method)
     if not pages or pages < 1 then return false, "no_count" end
-    pm:setSyntheticPagesNumber(pages)
+    self:setSyntheticPages(pm, pages)
     if not pm.use_page_labels then
         pm.use_page_labels = true
         pm.page_labels_cache = nil
         self.ui.doc_settings:saveSetting("pagemap_use_page_labels", true)
-        UIManager:broadcastEvent(Event:new("UsePageLabelsUpdated"))
     end
+    UIManager:broadcastEvent(Event:new("UsePageLabelsUpdated"))
     self.ui.doc_settings:saveSetting("sereno_page_numbers", pages)
+    self.ui.doc_settings:saveSetting("sereno_page_method", method)
     return true, pages
+end
+
+--[[--
+Builds KOReader's synthetic page map with exactly `pages` pages. KOReader's
+development version has `setSyntheticPagesNumber`; its releases only have
+"characters per page", so the same search is done here: crengine cuts the
+text every N characters, and N is searched until the book has `pages`
+pages (crengine accepts 500-3000).
+]]
+function Sereno:setSyntheticPages(pm, pages)
+    if pm.setSyntheticPagesNumber then return pm:setSyntheticPagesNumber(pages) end
+    local doc = self.ui.document
+    if not pm.has_pagemap then
+        pm.has_pagemap = true
+        if pm.resetLayout then pm:resetLayout() end
+        if self.ui.view and self.ui.view.registerViewModule then self.ui.view:registerViewModule("pagemap", pm) end
+    end
+    local function count(cpp)
+        doc:buildSyntheticPageMap(cpp)
+        return select(3, pm:getCurrentPageLabel()) or 0
+    end
+    local lo, hi = 500, 3000
+    local best, best_diff = 1500, math.huge
+    for _i = 1, 14 do
+        if lo > hi then break end
+        local mid = math.floor((lo + hi) / 2)
+        local n = count(mid)
+        if math.abs(n - pages) < best_diff then best, best_diff = mid, math.abs(n - pages) end
+        if n == pages then break
+        elseif n < pages then hi = mid - 1 -- fewer pages than wanted: fewer characters per page
+        else lo = mid + 1 end
+    end
+    count(best)
+    pm.chars_per_synthetic_page = best
+    pm.page_labels_cache = nil
+    if pm.updateVisibleLabels then pm:updateVisibleLabels() end
+    self.ui.doc_settings:saveSetting("pagemap_chars_per_synthetic_page", best)
+    self.ui.doc_settings:saveSetting("pagemap_doc_pages", select(3, pm:getCurrentPageLabel()))
+    UIManager:setDirty(self.ui.view and self.ui.view.dialog or "all", "partial")
 end
 
 function Sereno:onReaderReady()
@@ -1186,7 +1230,9 @@ function Sereno:onReaderReady()
         UIManager:scheduleIn(3, function() if self.ui.document then self:renderSleepImage() end end)
     end
     if not self.settings:nilOrTrue("reader_page_numbers") then return end
-    if self.ui.doc_settings and self.ui.doc_settings:readSetting("sereno_page_numbers") then return end
+    local ds = self.ui.doc_settings
+    if ds and ds:readSetting("sereno_page_numbers")
+        and ds:readSetting("sereno_page_method") == self.settings:readSetting("page_method", "print") then return end
     -- after the first page is on screen, so opening the book isn't slowed down
     UIManager:scheduleIn(1, function()
         if self.ui.document then self:applyPageNumbers(false) end
@@ -1498,30 +1544,31 @@ function Sereno:positionItems()
 end
 
 function Sereno:getPagesMenu()
+    -- KISS: how the position is shown, how pages are counted (one submenu),
+    -- reading speed, and this book's numbers. Stable page numbers in the
+    -- reader are always on; they are applied when a book opens.
     local menu = self:positionItems()
-    for _i, method in ipairs(MetricsDialog.METHODS) do
-        menu[#menu + 1] = {
-            text = _(MetricsDialog.METHOD_LABELS[method]),
-            help_text = method == "print" and _("Typesets each book on a reference printed page, so the count matches a paperback and never changes with your font settings.") or nil,
-            radio = true,
-            checked_func = function() return self.settings:readSetting("page_method", "print") == method end,
-            callback = function()
-                self.settings:saveSetting("page_method", method)
-                self.settings:flush()
-                if session.home then session.home.options = self:homeOptions(); session.home:update() end
-            end,
-            separator = method == "chars",
-        }
-    end
-    menu[#menu].separator = true
     menu[#menu + 1] = {
-        text = _("Use these page numbers in the reader"),
-        help_text = _("Tunes KOReader's stable page numbers so each book has exactly the pages shown here. The status bar and Go to page then match the home screen, whatever your font settings. Books with publisher page numbers keep them."),
-        checked_func = function() return self.settings:nilOrTrue("reader_page_numbers") end,
-        callback = function()
-            self.settings:saveSetting("reader_page_numbers", not self.settings:nilOrTrue("reader_page_numbers"))
-            self.settings:flush()
-            if self.settings:nilOrTrue("reader_page_numbers") and self.ui.document then self:applyPageNumbers(false) end
+        text_func = function()
+            return T(_("Count pages: %1"), _(MetricsDialog.METHOD_LABELS[self.settings:readSetting("page_method", "print")]))
+        end,
+        sub_item_table_func = function()
+            local items = {}
+            for _i, method in ipairs(MetricsDialog.METHODS) do
+                items[#items + 1] = {
+                    text = _(MetricsDialog.METHOD_LABELS[method]),
+                    help_text = method == "print" and _("Typesets each book on a reference printed page, so the count matches a paperback and never changes with your font settings.") or nil,
+                    radio = true,
+                    checked_func = function() return self.settings:readSetting("page_method", "print") == method end,
+                    callback = function()
+                        self.settings:saveSetting("page_method", method)
+                        self.settings:flush()
+                        if session.home then session.home.options = self:homeOptions(); session.home:update() end
+                        if self.ui.document then self:applyPageNumbers(false) end
+                    end,
+                }
+            end
+            return items
         end,
     }
     local speeds = { 180, 230, 280, 330 }
@@ -1544,17 +1591,6 @@ function Sereno:getPagesMenu()
         end,
     }
     if self.ui.document then
-        menu[#menu + 1] = {
-            text = _("This book: use these page numbers now"),
-            callback = function()
-                local ok, info = self:applyPageNumbers(true)
-                UIManager:show(InfoMessage:new{
-                    text = ok and T(_("This book now has %1 pages, as on the home screen."), info)
-                        or _("Page numbers can only be set for reflowable books (EPUB, FB2, MOBI…)."),
-                    timeout = 3,
-                })
-            end,
-        }
         menu[#menu + 1] = {
             text = _("This book: pages & readability"),
             callback = function(touchmenu_instance)

@@ -11,7 +11,13 @@
 - **Logo:** an open book drawn in one stroke, used as the settings tab icon, on the sleep screen and in the README.
 - **Shared painter** (`sereno/ui/painter.lua`) for every Sereno screen, with drawn symbols for what KOReader's icon set lacks.
 
+### Fixed (from testing on a Kindle)
+- **"Could not count this book: no META-INF/container.xml" on every EPUB.** KOReader's archive reader only finds files after walking through the archive once; Sereno asked for them straight away. EPUBs are now read the way KOReader's own code reads them (`sereno/archive.lua`), with the device's `unzip` as a fallback. Covers without CoverBrowser had the same problem and are fixed too.
+- **"Page numbers can only be set for reflowable books" on EPUBs.** The function Sereno used exists only in KOReader's development version. On releases, Sereno now builds the page map itself through KOReader's "characters per page", searching for the value that gives the book exactly its page count.
+- **Tests and CI now run against KOReader's latest release**, not its development version, with a check that every KOReader function Sereno calls exists there.
+
 ### Changed
+- **Simpler page counts menu:** pages or locations, *Count pages* (one submenu for the method), reading speed, and this book's numbers. Stable page numbers are always on and applied when a book opens (again if you change the method), so the two switches for them are gone.
 - **Simpler Text panel:** Font (up to four, each written in its own typeface), Size and Page (Compact, Normal, Roomy). Alignment and paragraph style moved to Settings as two switches; the four 0.2 presets are gone (earlier settings carry over).
 - **Page numbers that don't move are on by default:** the reader's numbers come from KOReader's character-based page map, tuned to Sereno's page count, so they stay the same whatever the font, size or margins.
 - **Kindle-style locations:** *Page counts → Show locations* shows "Location 452 of 3,400" (one per 128 characters of text) on the home screen, in the bars and on the sleep screen.

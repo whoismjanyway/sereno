@@ -14,7 +14,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y luajit unzip
 
       - name: Fetch KOReader (default menus)
-        run: git clone --depth 1 https://github.com/koreader/koreader.git ../koreader
+        # the latest *release*, as people run on their e-readers (the
+        # development version has APIs releases don't, e.g. setSyntheticPagesNumber)
+        run: |
+          TAG=$(git ls-remote --tags --refs https://github.com/koreader/koreader.git 'v20*' | sed 's|.*refs/tags/||' | sort -V | tail -1)
+          echo "KOReader $TAG"
+          git clone --depth 1 -b "$TAG" https://github.com/koreader/koreader.git ../koreader
 
       - name: Build a real book for page-count checks
         run: |

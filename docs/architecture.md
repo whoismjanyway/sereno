@@ -40,6 +40,7 @@ sereno.koplugin/
     │   ├── presenter.lua      ✱ the words on screen
     │   ├── layout.lua         ✱ positioned nodes, vertical budget, wrap
     │   └── homescreen.lua     KOReader widget: paints nodes, taps, clock
+    ├── archive.lua            EPUB (ZIP) reading: KOReader's libarchive, iterated first; the device's unzip as fallback
     └── library.lua            KOReader data sources: history, book state, covers, new books
 ```
 
@@ -101,4 +102,5 @@ With `KORENDER_READER=1` it also sets the opening page of a book, KOReader's def
 | `reader_spec` | Reading layouts: physical sizes, margins never under 5 mm, line-length cap, independent axes, style tweak ids that exist in KOReader |
 | `shell_spec` | Every tab, the quick controls and the reader's bars on 7 screens: nothing leaves the screen or overlaps, touch targets, paging |
 | `smoke_spec` | Loads `main.lua` against stubs of KOReader modules (`spec/koreader_stubs.lua`), walks every menu, shows the home screen, taps every target, opens the metrics dialog, counts a folder, drives the Text panel tap by tap, the reader's bars, locations and checks it fits six screens |
+| `koreader_api_spec` | Every KOReader function Sereno calls exists in `KOREADER_DIR` (CI: the latest release) |
 | `l10n_spec` | Translations are complete and keep their placeholders |

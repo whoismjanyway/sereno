@@ -6,7 +6,7 @@
 package.path = "spec/?.lua;" .. package.path
 local H = require("helper")
 
-for _i, spec in ipairs({ "menu_spec", "refresh_spec", "metrics_spec", "theme_spec", "home_spec", "reader_spec", "shell_spec", "smoke_spec", "l10n_spec" }) do
+for _i, spec in ipairs({ "menu_spec", "refresh_spec", "metrics_spec", "theme_spec", "home_spec", "reader_spec", "shell_spec", "smoke_spec", "l10n_spec", "koreader_api_spec" }) do
     local path = "spec/" .. spec .. ".lua"
     local f = io.open(path, "rb")
     if f then

@@ -228,9 +228,11 @@ test("page counts menu walks and switches method", function()
     eq(p:homeOptions().page_method, "locations")
     menu[1].callback()
     eq(p.settings:readSetting("position"), nil)
-    menu[4].callback()
+    eq(#menu, 5, "pages/locations, how pages are counted, reading speed, count folder")
+    local methods = menu[3].sub_item_table_func()
+    methods[2].callback()
     eq(p.settings:readSetting("page_method"), "downloaded")
-    menu[3].callback()
+    methods[1].callback()
     eq(p.settings:readSetting("page_method"), "print")
 end)
 
@@ -355,6 +357,48 @@ test("the panel fits every screen without overlaps", function()
         for _j, a in ipairs(nodes) do if a.kind == "page" then pages = pages + 1 end end
         eq(pages, 3)
     end
+end)
+
+test("EPUBs are read the way KOReader's archive reader needs (iterate first)", function()
+    local Archive = require("sereno/archive")
+    local before = S.archiver_iterations
+    local zip = Archive.open("spec/fixtures/sample.epub")
+    truthy(zip:read("META-INF/container.xml"), "container.xml found")
+    truthy(S.archiver_iterations > before, "entries indexed before extracting")
+    zip:close()
+    -- without libarchive, the device's unzip is used
+    local saved = package.loaded["ffi/archiver"]
+    package.loaded["ffi/archiver"] = nil
+    package.preload["ffi/archiver"] = function() error("no libarchive") end
+    local zip2 = Archive.open("spec/fixtures/sample.epub")
+    truthy(zip2:read("META-INF/container.xml"), "unzip fallback")
+    package.preload["ffi/archiver"] = nil
+    package.loaded["ffi/archiver"] = saved
+end)
+
+test("page numbers on KOReader releases (characters per page, no setSyntheticPagesNumber)", function()
+    local dir = S.settings_dir .. "/books"
+    os.execute(string.format("mkdir -p %q && cp spec/fixtures/sample.epub %q/release.epub", dir, dir))
+    local ui = newUI("reader")
+    ui.document.file = dir .. "/release.epub"
+    ui.rolling = {}
+    -- crengine: total characters / characters per page = pages
+    local total_chars, cpp_now = 25000, nil -- the fixture is a short book (13 print pages)
+    ui.document.buildSyntheticPageMap = function(_self, cpp) cpp_now = cpp end
+    ui.pagemap = {
+        getCurrentPageLabel = function() return "1", 1, math.ceil(total_chars / cpp_now) end,
+        resetLayout = function() end, updateVisibleLabels = function() end,
+    }
+    ui.view = { registerViewModule = function() end }
+    local ds = {}
+    ui.doc_settings = { saveSetting = function(_, k, v) ds[k] = v end, readSetting = function(_, k) return ds[k] end }
+    local p = Sereno:new{ ui = ui }
+    local ok, pages = p:applyPageNumbers(false)
+    truthy(ok, tostring(pages))
+    eq(math.ceil(total_chars / ds.pagemap_chars_per_synthetic_page), pages, "the book has exactly Sereno's page count")
+    eq(ui.pagemap.use_page_labels, true)
+    eq(ui.pagemap.has_pagemap, true)
+    truthy(H.contains(S.events, "UsePageLabelsUpdated"), "the status bar is told")
 end)
 
 test("the reader can use Sereno's page count as its page numbers", function()

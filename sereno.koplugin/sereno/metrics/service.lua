@@ -43,22 +43,20 @@ function Service.cache()
     return cache
 end
 
---- Extractor backed by KOReader's libarchive bindings, one archive kept open per book.
+--- Extractor over sereno/archive (libarchive, then the device's unzip), one archive kept open per book.
 local function archiveExtractor()
-    local Archiver = require("ffi/archiver")
-    local reader, opened_path
+    local Archive = require("sereno/archive")
+    local zip, opened_path
     local extract = function(path, name)
         if opened_path ~= path then
-            if reader then reader:close() end
-            reader = Archiver.Reader:new()
-            if not reader:open(path) then reader, opened_path = nil, nil return nil end
-            opened_path = path
+            if zip then zip:close() end
+            zip, opened_path = Archive.open(path), path
         end
-        return reader:extractToMemory(name)
+        return zip:read(name)
     end
     local close = function()
-        if reader then reader:close() end
-        reader, opened_path = nil, nil
+        if zip then zip:close() end
+        zip, opened_path = nil, nil
     end
     return extract, close
 end

@@ -58,6 +58,7 @@ return {
     ["While the device sleeps, show the book you're reading: its cover, title and how far you are. Uses KOReader's own sleep screen (random image from Sereno's folder), so turning it off restores your previous choice."] =
         "Mientras el dispositivo duerme, muestra el libro que estás leyendo: su portada, título y cuánto llevas. Usa la pantalla de reposo de KOReader (imagen aleatoria de la carpeta de Sereno), así que al desactivarla vuelve tu elección anterior.",
     ["%1 locations"] = "%1 posiciones",
+    ["Count pages: %1"] = "Contar páginas: %1",
     ["Back to KOReader's defaults"] = "Volver a los valores de KOReader",
     ["Book-style paragraphs"] = "Párrafos como en un libro",
     ["Even right edges, as in printed books. Off: ragged right."] = "Bordes derechos parejos, como en los libros impresos. Desactivado: alineado a la izquierda.",

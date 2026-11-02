@@ -94,12 +94,9 @@ end
 --- Renders the cover image stored inside an EPUB (its OPF cover item).
 local function renderOwnCover(file, metrics)
     if not (metrics and metrics.cover_path) then return nil end
-    local ok_a, Archiver = pcall(require, "ffi/archiver")
-    if not ok_a then return nil end
-    local reader = Archiver.Reader:new()
-    if not reader:open(file) then return nil end
-    local data = reader:extractToMemory(metrics.cover_path)
-    reader:close()
+    local zip = require("sereno/archive").open(file)
+    local data = zip:read(metrics.cover_path)
+    zip:close()
     if not data or #data == 0 then return nil end
     local RenderImage = require("ui/renderimage")
     local ok, bb = pcall(RenderImage.renderImageData, RenderImage, data, #data, false,
