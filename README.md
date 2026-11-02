@@ -33,6 +33,46 @@ Sereno is a KOReader plugin with three parts:
 | **E-ink** | Each widget refreshes on its own. | One coordinator groups refreshes. Only the clock line repaints, once a minute, and pauses during sleep. |
 | **Page numbers** | Whatever KOReader shows, which changes with every font change. | A stable *print-model* count, the same for every reading setting. See [Page counts](#page-counts). |
 
+## Fonts, text size and margins
+
+Sereno sizes everything in points and millimetres, then converts to pixels with the screen's DPI. Text therefore prints at the same size on a 167 dpi Kindle and a 300 dpi Paperwhite, and big screens get wider margins instead of giant letters.
+
+**Text size.** Below, body text is drawn at real size on four devices. KOReader's default interface text grows with the pixel count: 10.3 pt on a 6" Kindle, 18 pt on a Kindle Scribe. Sereno picks 10–12 pt by screen diagonal.
+
+![Body text at real size: KOReader's default vs Sereno, on four devices](docs/images/design/physical-size.png)
+
+**Fonts.** Every style comes from one scale: each step is 1.25× the previous one, around the body size.
+
+| Font | Used for |
+|---|---|
+| Noto Serif | Book titles, the greeting and the counts, like a cover or a title page |
+| Noto Sans | Everything else |
+
+Both fonts ship with KOReader.
+
+![The type scale: display, headline, title, body, label, caption and micro, with sizes and leading](docs/images/design/type-scale.png)
+
+**Margins and grid.** The content sits in a column with at least 6 mm of margin, capped at 110 mm wide so lines stay readable on large screens.
+
+| | Small screens | Large screens |
+|---|---|---|
+| Grid | 6 columns | 8 columns |
+| Gutter | 4 mm | 4 mm |
+
+All vertical spacing is a multiple of 1.5 mm, and touch targets are at least 7 mm high.
+
+![Margins and columns of four devices, drawn to the same scale](docs/images/design/margins.png)
+
+The overlay below is drawn on the real home screen, on a Kindle Paperwhite and on a 6" Kindle:
+- **Red:** margins
+- **Blue:** grid columns
+- **Cyan lines:** the 1.5 mm baseline unit
+- **Green dashes:** touch targets
+
+![Design grid over the home screen: margins, columns, baseline unit and touch targets](docs/images/design/grid.png)
+
+To make these images yourself, run `luajit tools/specimen.lua out/`. For the overlays, run `SERENO_PREVIEW_GRID=1 luajit tools/preview.lua out/ books/`. There is more in [docs/design.md](docs/design.md).
+
 ## Page counts
 
 KOReader numbers pages as they are laid out on your screen. Change the font size and *page 120 of 340* becomes *page 180 of 512*. Its synthetic page map, which cuts the text every 1500 characters, is stable but only exists once a book has been opened.
@@ -67,7 +107,7 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
 
 ## Install
 
-1. Download this repository, or a release, and copy the `sereno.koplugin` folder into KOReader's `plugins/` folder.
+1. Download `sereno.koplugin.zip` from the [latest release](https://github.com/whoismjanyway/sereno/releases/latest), unzip it, and copy the `sereno.koplugin` folder into KOReader's `plugins/` folder.
    - **Kindle:** `/mnt/us/koreader/plugins/`
    - **Kobo:** `/mnt/onboard/.adds/koreader/plugins/`
 2. Restart KOReader.

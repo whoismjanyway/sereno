@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-11-02)
 
 ### Added
 - **Redesigned home screen:**
@@ -12,6 +12,7 @@
   - The layout degrades step by step on small screens and adds a second shelf row on large ones.
 - **Covers without CoverBrowser:** covers are read from the EPUB itself (EPUB 2 and 3), rendered by KOReader and kept in a small memory cache.
 - **Previews:** previews now use real covers, extracted from the sample EPUBs, plus a colour variant.
+- **Design explainers:** `tools/specimen.lua` draws the type scale, text at real size and margins to scale. `SERENO_PREVIEW_GRID=1` draws the design grid over the home screen.
 - **Home screen:**
   - Contextual home screen: continue reading, finished, start, empty.
   - Designed from physical sizes, with a modular type scale, millimetre margins and grid, and e-ink-safe greys.
@@ -25,6 +26,7 @@
 - **Development:** CI running all specs on LuaJIT, and layout previews for several devices.
 
 ### Changed
+- Margins are rounded up, so they are never under 6 mm.
 - Strings are now English, with a plugin-local translation layer.
 - The Sereno menu is reorganised: Home screen, Page counts, Tiered menus, Refresh budget.
 

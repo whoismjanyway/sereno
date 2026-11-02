@@ -9,6 +9,8 @@ KOReader sizes interface fonts with `Screen:scaleBySize`, which multiplies by `m
 | Kindle (2019) | 600 px wide at 167 dpi | 24 px ≈ 10 pt |
 | Kindle Scribe | 1860 px wide at 300 dpi | 75 px ≈ 18 pt |
 
+![Body text at real size: KOReader's default vs Sereno](images/design/physical-size.png)
+
 `sereno/ui/theme.lua` starts from millimetres and points instead:
 
 - **Body size** comes from the screen diagonal: 10 pt below 6.5", 10.5 pt up to 7.5", 11 pt up to 9", 12 pt above.
@@ -26,6 +28,12 @@ KOReader sizes interface fonts with `Screen:scaleBySize`, which multiplies by `m
 - **Touch targets:** at least 7 mm high.
 - **Ink:** black text, plus only two greys, `#444` and `#888`. Light-grey text dithers badly on 16-level panels, so there is none.
 - **Fonts:** serif (Noto Serif) for book titles, like a cover or a title page, and sans (Noto Sans) for interface text. Both ship with KOReader.
+
+![The type scale](images/design/type-scale.png)
+
+![Margins and columns of four devices, drawn to the same scale](images/design/margins.png)
+
+![Design grid over the home screen](images/design/grid.png)
 
 To get exact pixel sizes through `Font:getFace`, the theme divides by KOReader's scale factor (`Theme:faceSize`).
 

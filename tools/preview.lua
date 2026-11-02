@@ -11,6 +11,8 @@
 --   KOREADER_DIR           KOReader checkout, for the real tab bar icons
 --   SERENO_PREVIEW_COLOR=1 keep covers in colour (Kindle Colorsoft, Kobo
 --                          colour); by default they are greyscale like e-ink
+--   SERENO_PREVIEW_GRID=1  draw the design grid on top: margins, columns,
+--                          baseline unit and touch targets, with measurements
 -- Needs `unzip`, plus `rsvg-convert` and ImageMagick `convert` for covers.
 -- Convert the result with: rsvg-convert -o out.png out.svg
 
@@ -24,6 +26,7 @@ local out_dir = arg[1] or "previews"
 local books_dir = arg[2]
 local ko_dir = os.getenv("KOREADER_DIR")
 local color = os.getenv("SERENO_PREVIEW_COLOR") == "1"
+local grid = os.getenv("SERENO_PREVIEW_GRID") == "1"
 os.execute('mkdir -p "' .. out_dir .. '/covers"')
 
 local DEVICES = {
@@ -200,6 +203,40 @@ local function render(t, nodes, path, title)
             out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="%s" stroke="%s" stroke-width="%d"/>',
                 n.x, n.y, n.w, n.h, n.h / 2, track, n.inset and "#000" or "none", n.inset and 1 or 0)
             out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="#000"/>', n.x, n.y, math.floor(n.w * n.fraction), n.h, n.h / 2)
+        end
+    end
+    if grid then
+        -- design overlay: margins (red), grid columns (blue), baseline unit
+        -- (cyan lines), touch targets (green), with sizes in millimetres
+        local mm = function(px) return px / t.dpi * 25.4 end
+        local fs = math.max(10, math.floor(t.type.micro.size * 0.9))
+        local function label(x, y, txt, fill, anchor)
+            out[#out + 1] = string.format('<text x="%d" y="%d" font-family="Noto Sans, sans-serif" font-size="%d" font-weight="bold" fill="%s" text-anchor="%s" stroke="#fff" stroke-width="%d" paint-order="stroke">%s</text>',
+                x, y, fs, fill, anchor or "start", math.max(2, fs / 5), esc(txt))
+        end
+        out[#out + 1] = string.format('<rect x="0" y="0" width="%d" height="%d" fill="#e5484d" fill-opacity="0.18"/>', t.margin, t.height)
+        out[#out + 1] = string.format('<rect x="%d" y="0" width="%d" height="%d" fill="#e5484d" fill-opacity="0.18"/>', t.width - t.margin, t.margin, t.height)
+        for c = 0, t.columns - 1 do
+            local cx = t.margin + c * (t.column_width + t.gutter)
+            out[#out + 1] = string.format('<rect x="%d" y="0" width="%d" height="%d" fill="#3e63dd" fill-opacity="0.07"/>', cx, t.column_width, t.height)
+        end
+        for y = 0, t.height, t.unit do
+            out[#out + 1] = string.format('<rect x="0" y="%d" width="%d" height="1" fill="#05a2c2" fill-opacity="0.25"/>', y, t.width)
+        end
+        for _, n in ipairs(nodes) do
+            if n.kind == "tap" then
+                out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="#30a46c" stroke-width="%d" stroke-dasharray="%d,%d"/>',
+                    n.x, n.y, n.w, n.h, math.max(2, t.hairline * 2), t.unit, t.unit / 2)
+            end
+        end
+        local mid = math.floor(t.height * 0.42)
+        out[#out + 1] = string.format('<text transform="translate(%d,%d) rotate(-90)" font-family="Noto Sans, sans-serif" font-size="%d" font-weight="bold" fill="#c4232b" text-anchor="middle">%s</text>',
+            math.floor(t.margin / 2 + fs / 3), mid, fs, esc(string.format("margin %.1f mm", mm(t.margin))))
+        label(t.margin + 4, fs + 4, string.format("%d columns · %.1f mm gutter · %.1f mm unit", t.columns, mm(t.gutter), mm(t.unit)), "#2a4bb8")
+        for _, n in ipairs(nodes) do
+            if n.id == "nav_tap_home" then
+                label(n.x + n.w / 2, n.y - fs / 2, string.format("touch %.1f mm", mm(n.h)), "#1b7f4d", "middle")
+            end
         end
     end
     out[#out + 1] = "</svg>"

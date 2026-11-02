@@ -84,7 +84,7 @@ function Theme.new(screen)
     -- (portrait) or ~180 mm (landscape) so lines and rows stay readable
     local min_margin = t:mm(6)
     local max_column = t:mm(t.landscape and 180 or 110)
-    t.margin = round(math.max(min_margin, (t.width - max_column) / 2, t.width * 0.055))
+    t.margin = math.ceil(math.max(min_margin, (t.width - max_column) / 2, t.width * 0.055))
     t.content_width = t.width - 2 * t.margin
     t.gutter = round(t:mm(4))
     t.columns = t.landscape and 8 or (t.width_mm > 140 and 8 or 6)
