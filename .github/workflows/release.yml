@@ -1,0 +1,55 @@
+name: release
+
+# Publishes a GitHub release with the installable plugin zip.
+# Run it from the Actions tab ("Run workflow"), or push a tag like v0.2.0.
+# Release notes come from .github/release-notes/<tag>.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.2.0 (must match sereno.koplugin/_meta.lua)"
+        required: true
+        default: "0.2.0"
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the tag
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then v="${GITHUB_REF_NAME#v}"; else v="${{ github.event.inputs.version }}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          grep -q "version = \"$v\"" sereno.koplugin/_meta.lua || { echo "_meta.lua is not at version $v"; exit 1; }
+          test -f ".github/release-notes/v$v.md" || { echo "missing .github/release-notes/v$v.md"; exit 1; }
+
+      - name: Run the specs first
+        run: |
+          sudo apt-get update && sudo apt-get install -y luajit unzip
+          git clone --depth 1 https://github.com/koreader/koreader.git ../koreader
+          KOREADER_DIR=../koreader luajit spec/run.lua
+
+      - name: Build the plugin zip
+        run: |
+          mkdir -p dist
+          zip -qr dist/sereno.koplugin.zip sereno.koplugin -x '*.tmp'
+          (cd dist && sha256sum sereno.koplugin.zip > SHA256SUMS)
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" dist/sereno.koplugin.zip dist/SHA256SUMS \
+            --target "${{ github.sha }}" \
+            --title "Sereno ${{ steps.v.outputs.version }}" \
+            --notes-file ".github/release-notes/${{ steps.v.outputs.tag }}.md" \
+            --latest
