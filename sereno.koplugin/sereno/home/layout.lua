@@ -22,7 +22,7 @@ local Layout = {}
 -- Average glyph advance as a fraction of the font size. Only used when no
 -- real measuring function is available (previews, tests); on a device the
 -- theme carries `measure`, backed by KOReader's own text shaping.
-Layout.ADVANCE = { serif = 0.5, sans = 0.55 }
+Layout.ADVANCE = { serif = 0.56, sans = 0.55 }
 
 -- removes the last UTF-8 character
 local function dropLast(s)
