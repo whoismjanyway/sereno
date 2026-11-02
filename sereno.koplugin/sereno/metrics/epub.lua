@@ -49,7 +49,8 @@ end
 --[[--
 @tparam function read  read(name) -> content or nil
 @tparam table by_name  ZIP entries by name (for sizes)
-@treturn table|nil { title, authors = {}, language, isbn, spine = { {path, linear, size, compressed_size} } }
+@treturn table|nil { title, authors = {}, language, isbn, cover = { path, media_type },
+  spine = { {path, linear, size, compressed_size} } }
 @treturn string|nil error
 ]]
 function Epub.open(read, by_name)
@@ -99,6 +100,31 @@ function Epub.open(read, by_name)
             }
         end
     end
+
+    -- cover image: EPUB 3 "cover-image" property, EPUB 2 <meta name="cover">,
+    -- or as a last resort an image whose id or file name says "cover"
+    local cover
+    for _id, item in pairs(manifest) do
+        if item.properties:find("cover-image", 1, true) then cover = item break end
+    end
+    if not cover then
+        for tag in metadata:gmatch("<[%w:]*meta%s[^>]*>") do
+            if attr(tag, "name") == "cover" then
+                local item = manifest[attr(tag, "content") or ""]
+                if item and (item.media_type or ""):find("^image/") then cover = item end
+                break
+            end
+        end
+    end
+    if not cover then
+        for id, item in pairs(manifest) do
+            if (item.media_type or ""):find("^image/") and (id:lower():find("cover", 1, true) or item.path:lower():find("cover", 1, true)) then
+                cover = item
+                break
+            end
+        end
+    end
+    if cover then book.cover = { path = cover.path, media_type = cover.media_type } end
 
     -- spine, in reading order
     local spine_xml = opf:match("<[%w:]*spine[^>]*>(.-)</[%w:]*spine>") or ""

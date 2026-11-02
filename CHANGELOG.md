@@ -3,6 +3,15 @@
 ## 0.2.0 (unreleased)
 
 ### Added
+- **Redesigned home screen:**
+  - A greeting header.
+  - The current book in a card, with its real cover and fact chips.
+  - Library tiles (reading, unread, finished).
+  - A shelf of covers with progress bars, and *See all*.
+  - A tab bar with KOReader's icons.
+  - The layout degrades step by step on small screens and adds a second shelf row on large ones.
+- **Covers without CoverBrowser:** covers are read from the EPUB itself (EPUB 2 and 3), rendered by KOReader and kept in a small memory cache.
+- **Previews:** previews now use real covers, extracted from the sample EPUBs, plus a colour variant.
 - **Home screen:**
   - Contextual home screen: continue reading, finished, start, empty.
   - Designed from physical sizes, with a modular type scale, millimetre margins and grid, and e-ink-safe greys.

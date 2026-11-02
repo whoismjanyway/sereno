@@ -16,7 +16,7 @@ local Zip = require("sereno/metrics/zip")
 
 local Analyzer = {}
 
-Analyzer.VERSION = 1 -- bump when results change, so caches are refreshed
+Analyzer.VERSION = 2 -- bump when results change, so caches are refreshed
 Analyzer.READABILITY_WORDS = 60000
 
 local IMAGE_EXT = { jpg = true, jpeg = true, png = true, gif = true, webp = true, bmp = true, avif = true, jxl = true }
@@ -123,6 +123,7 @@ function Analyzer.epub(path, deps, opts)
         authors = book.authors,
         language = lang,
         isbn = book.isbn,
+        cover_path = book.cover and book.cover.path or nil,
         pages = {
             print = print_pages,
             apnx = Pages.apnx(raw_html, total_chars),

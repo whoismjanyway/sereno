@@ -10,7 +10,16 @@ Sereno is a KOReader plugin with three parts:
 
 ![The home screen while reading, after finishing a book, and before starting one](docs/images/states.png)
 
-*Home screen previews rendered by `tools/preview.lua` (Kindle Paperwhite 5, 300 dpi). On a device, CoverBrowser's real covers replace the typeset ones.*
+![The same home screen on a 6" Kindle, a Kindle Scribe and a colour screen](docs/images/devices.png)
+
+*Previews rendered by `tools/preview.lua`: a Kindle Paperwhite 5 (top), then a 6" Kindle, a Kindle Scribe and a colour e-ink screen. The covers are the real ones, taken out of each EPUB by Sereno's own reader, from [Standard Ebooks](https://standardebooks.org) editions.*
+
+**What's on the screen**, from top to bottom:
+- **Header:** a greeting in serif and the date. Small screens get a single line with the date, clock and battery.
+- **Book card:** the book you're reading, with its real cover and a progress bar. Short facts sit in chips: *Page 68 of 179*, *2 h 13 min left*, the readability.
+- **Library tiles:** books being read, unread and finished. They become one line, or disappear, when space is short.
+- **Shelf:** real covers, with progress bars on books in progress, and *See all* to open the library. Large screens get two rows.
+- **Tab bar:** KOReader's own icons with words under them; the active tab is marked.
 
 ## Why another interface plugin?
 
@@ -67,7 +76,7 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
    - **Page counts → Count all books in this folder** counts the whole library once.
    - **Tiered menus** lets you choose *Reading*, *Everyday* or *Everything*.
 
-The cover art on the home screen comes from KOReader's CoverBrowser plugin, which is on by default. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
+Covers come from KOReader's CoverBrowser cache when that plugin is on. Otherwise Sereno renders the cover image stored inside the EPUB itself, keeping at most 16 in memory. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
 
 > **Status:** 0.2, early. Everything is covered by tests run on LuaJIT with KOReader stubs, and by layout previews for several devices, but **it has not yet been tried on a real device**. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -88,4 +97,6 @@ luajit tools/preview.lua previews && rsvg-convert -o p.png previews/paperwhite-r
 
 - **Algorithms:** the APNX, Adobe and characters-per-page estimators follow Grant Drake's Count Pages plugin for Calibre (GPL-3.0).
 - **Prior work:** thanks to the KOReader, SimpleUI and ZenOS projects for showing what people want from their e-readers.
+- **Sample books:** the preview covers come from [Standard Ebooks](https://standardebooks.org). Their cover art is in the public domain, and their cover designs are dedicated to the public domain under CC0.
+- **Icons:** the tab bar uses KOReader's own icon set.
 - **License:** Sereno is licensed under the AGPL-3.0, like KOReader.

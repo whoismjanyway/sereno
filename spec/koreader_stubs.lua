@@ -88,7 +88,7 @@ for _, name in ipairs({
     "ui/widget/container/rightcontainer", "ui/widget/container/topcontainer", "ui/widget/container/bottomcontainer",
     "ui/widget/verticalgroup", "ui/widget/horizontalgroup", "ui/widget/overlapgroup", "ui/widget/verticalspan",
     "ui/widget/horizontalspan", "ui/widget/linewidget", "ui/widget/imagewidget", "ui/widget/progresswidget",
-    "ui/widget/keyvaluepage", "ui/widget/buttondialog", "ui/widget/button", "ui/widget/container/underlinecontainer",
+    "ui/widget/keyvaluepage", "ui/widget/iconwidget", "ui/widget/buttondialog", "ui/widget/button", "ui/widget/container/underlinecontainer",
 }) do widgetModule(name) end
 stub("ui/font", { getFace = function(_, name, size) return { name = name, size = size, orig_size = size } end })
 stub("ui/size", { border = { thin = 1, default = 2 }, padding = { default = 5, small = 2 }, margin = { default = 5 }, span = { horizontal_default = 10 } })

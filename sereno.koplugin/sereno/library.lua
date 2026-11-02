@@ -75,16 +75,59 @@ function Library.bookInfo(file, metrics)
     return info
 end
 
---- Cover blitbuffer from CoverBrowser's cache (nil when unavailable).
--- The caller must not free it: it belongs to the returned bookinfo.
-function Library.cover(file)
-    local bim = bookInfoManager()
-    if not bim then return nil end
-    local ok, bi = pcall(bim.getBookInfo, bim, file, true)
-    if ok and bi and bi.has_cover and not bi.ignore_cover and bi.cover_bb then
-        return bi.cover_bb
+-- Covers Sereno rendered itself, most recently used last. Bounded, because
+-- each one is a full-colour blitbuffer.
+local own_covers = { order = {}, bb = {} }
+Library.COVER_CACHE = 16
+Library.COVER_MAX = { w = 480, h = 720 } -- render size; ImageWidget scales further down
+
+local function rememberCover(file, bb)
+    own_covers.bb[file] = bb
+    table.insert(own_covers.order, file)
+    while #own_covers.order > Library.COVER_CACHE do
+        local old = table.remove(own_covers.order, 1)
+        if own_covers.bb[old] and own_covers.bb[old] ~= false then own_covers.bb[old]:free() end
+        own_covers.bb[old] = nil
     end
+end
+
+--- Renders the cover image stored inside an EPUB (its OPF cover item).
+local function renderOwnCover(file, metrics)
+    if not (metrics and metrics.cover_path) then return nil end
+    local ok_a, Archiver = pcall(require, "ffi/archiver")
+    if not ok_a then return nil end
+    local reader = Archiver.Reader:new()
+    if not reader:open(file) then return nil end
+    local data = reader:extractToMemory(metrics.cover_path)
+    reader:close()
+    if not data or #data == 0 then return nil end
+    local RenderImage = require("ui/renderimage")
+    local ok, bb = pcall(RenderImage.renderImageData, RenderImage, data, #data, false,
+        Library.COVER_MAX.w, Library.COVER_MAX.h)
+    if ok and bb then return bb end
+    logger.dbg("Sereno: could not render cover of", file)
     return nil
+end
+
+--[[--
+Cover blitbuffer for a book, or nil. CoverBrowser's cache is used when that
+plugin is on; otherwise Sereno renders the cover image found in the EPUB
+itself, so covers work with CoverBrowser disabled too.
+The caller must not free the returned blitbuffer.
+]]
+function Library.cover(file, metrics)
+    local bim = bookInfoManager()
+    if bim then
+        local ok, bi = pcall(bim.getBookInfo, bim, file, true)
+        if ok and bi and bi.has_cover and not bi.ignore_cover and bi.cover_bb then
+            return bi.cover_bb
+        end
+    end
+    local cached = own_covers.bb[file]
+    if cached ~= nil then return cached or nil end
+    local bb = renderOwnCover(file, metrics)
+    rememberCover(file, bb or false) -- remember failures too, to not retry every paint
+    return bb
 end
 
 --[[--
@@ -125,6 +168,23 @@ function Library.newBooks(n)
     local out = {}
     for i = 1, math.min(n or 10, #scan_cache) do out[i] = scan_cache[i] end
     return out
+end
+
+--- Counts for the home screen's library row.
+function Library.stats()
+    Library.newBooks(0) -- make sure the scan ran
+    local stats = { unread = #(scan_cache or {}), in_progress = 0, finished = 0 }
+    for _i, file in ipairs(Library.history()) do
+        local state = BookList.getBookInfo(file) or {}
+        if state.been_opened then
+            if state.status == "complete" or (state.percent_finished or 0) >= 0.985 then
+                stats.finished = stats.finished + 1
+            elseif state.status ~= "abandoned" then
+                stats.in_progress = stats.in_progress + 1
+            end
+        end
+    end
+    return stats
 end
 
 function Library.invalidate()

@@ -15,6 +15,7 @@ local Device = require("device")
 local Font = require("ui/font")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
+local IconWidget = require("ui/widget/iconwidget")
 local ImageWidget = require("ui/widget/imagewidget")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local TextBoxWidget = require("ui/widget/textboxwidget")
@@ -57,6 +58,12 @@ function HomeScreen:init()
         local n = #(w.vertical_string_list or {})
         w:free()
         return math.max(1, n)
+    end
+    self.theme.measure_width = function(text, style_name)
+        local w = TextWidget:new{ text = text, face = self:face(style_name), padding = 0 }
+        local width = w:getSize().w
+        w:free()
+        return width
     end
     if Device:isTouchDevice() then
         self.ges_events = {
@@ -201,12 +208,36 @@ function HomeScreen:paintTo(bb, x, y)
         elseif node.kind == "cover" then
             local ok, err = pcall(self.paintCover, self, bb, nx, ny, node)
             if not ok then logger.warn("Sereno: cover drawing failed", err) end
+        elseif node.kind == "box" then
+            local r = node.radius or 0
+            if node.fill then
+                if r > 0 then bb:paintRoundedRect(nx, ny, node.w, node.h, INK[node.fill], r)
+                else bb:paintRect(nx, ny, node.w, node.h, INK[node.fill]) end
+            end
+            if node.border then
+                bb:paintBorder(nx, ny, node.w, node.h, node.bw or self.theme.hairline, INK[node.border], r)
+            end
+        elseif node.kind == "icon" then
+            local w = self.widgets[i]
+            if not w then
+                -- inactive tabs are dimmed rather than drawn in a lighter grey
+                w = IconWidget:new{ icon = node.name, width = node.w, height = node.h, dim = node.color ~= "text" }
+                self.widgets[i] = w
+            end
+            w:paintTo(bb, nx, ny)
         elseif node.kind == "rule" then
             bb:paintRect(nx, ny, node.w, node.h, INK[node.color] or INK.text)
         elseif node.kind == "bar" then
-            local mid = ny + math.floor((node.h - self.theme.hairline) / 2)
-            bb:paintRect(nx, mid, node.w, self.theme.hairline, INK.hairline)
-            bb:paintRect(nx, ny, math.floor(node.w * math.min(1, node.fraction or 0)), node.h, INK.text)
+            local r = math.floor(node.h / 2)
+            local filled = math.floor(node.w * math.min(1, node.fraction or 0))
+            if node.inset then
+                -- drawn over a cover: white track with an outline
+                bb:paintRoundedRect(nx, ny, node.w, node.h, INK.paper, r)
+                bb:paintBorder(nx, ny, node.w, node.h, 1, INK.text, r)
+            else
+                bb:paintRoundedRect(nx, ny, node.w, node.h, INK.track, r)
+            end
+            if filled > 0 then bb:paintRoundedRect(nx, ny, filled, node.h, INK.text, r) end
         end
     end
 end

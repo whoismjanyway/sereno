@@ -179,6 +179,33 @@ test("every tap target has an action and is at least the touch size high", funct
     truthy(taps >= 6)
 end)
 
+test("big screens show the card, the library tiles and two shelf rows", function()
+    local t = Theme.new(DEVICES[5])
+    local src = sources({ "gatsby", "pride" }, { "frank", "s2" })
+    src.stats = function() return { unread = 128, in_progress = 3, finished = 27 } end
+    for i = 1, 8 do BOOKS["extra" .. i] = { title = "Extra " .. i, percent = 0, status = "new" } end
+    src.new_books = function() return { "frank", "s2", "extra1", "extra2", "extra3", "extra4", "extra5", "extra6" } end
+    local m = Context.build(src, { now = EVENING, shelf_size = 10 })
+    local nodes = Layout.home(t, m, Presenter.present(m, identity, {}))
+    local ids = {}
+    for _j, n in ipairs(nodes) do ids[n.id or ""] = n end
+    truthy(ids.hero_card and ids.hero_card.kind == "box", "hero card")
+    truthy(ids.stat_value_2 and ids.stat_value_2.text == "128", "tiles")
+    truthy(ids.shelf_cover_6, "second shelf row")
+    truthy(ids.nav_icon_home and ids.nav_active, "tab bar with active tab")
+    eq(#Layout.check(t, nodes), 0)
+end)
+
+test("small screens use a one-line header and keep the shelf", function()
+    local t = Theme.new(DEVICES[1])
+    local m = Context.build(sources({ "gatsby", "pride" }, { "frank" }), { now = EVENING })
+    local nodes = Layout.home(t, m, Presenter.present(m, identity, {}))
+    local ids = {}
+    for _j, n in ipairs(nodes) do ids[n.id or ""] = n end
+    eq(ids.greeting, nil)
+    truthy(ids.shelf_cover_1, "shelf kept")
+end)
+
 test("wrapping shortens instead of overflowing", function()
     local style = { size = 20, font = "NotoSans" }
     local lines = Layout.wrap("Alice’s Adventures in Wonderland", style, 110, 2)

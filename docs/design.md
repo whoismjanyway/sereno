@@ -40,17 +40,39 @@ The home screen answers one question first, "where was I?", and then offers a fe
 | Start | The newest unread book | "Up next" |
 | Empty | A short note on how to add books | — |
 
+## The pieces
+
+The design takes the structure that works in modern reading apps and translates it for e-ink:
+
+| Piece | On screen | E-ink translation |
+|---|---|---|
+| **Card** | The book you're reading sits in a card with 2 mm rounded corners and a hairline border. | No shadows on the card itself. |
+| **Cover shadow** | Every cover casts a small offset shadow. | A flat grey block 0.8 mm down and right, instead of a blur, which e-ink can't render cleanly. |
+| **Chips** | Short facts in pill outlines: page, time left, readability. | Outlines only, no filled backgrounds, so text stays black on white. |
+| **Tiles** | Library counts in three equal tiles, with the number in serif and the label in small capitals. | Same outline treatment as chips. |
+| **Shelf** | Real covers on a common baseline. Books in progress get a thin progress bar laid over the bottom of the cover, white track and black fill. | The bar stays readable over dark covers. |
+| **Tab bar** | KOReader's own outline icons with a word under each. | The active tab gets bold text, full-black ink and a short rule on top; the others are dimmed. |
+
+Covers come from CoverBrowser's cache, or Sereno renders the EPUB's own cover image (EPUB 3 `cover-image`, EPUB 2 `<meta name="cover">`, or a file named "cover"). Without either, it draws a typeset cover.
+
 ## Fit the screen, never overflow
 
-`sereno/home/layout.lua` works to a vertical budget. It first reserves at least one shelf row, then tries hero variants from generous to compact until one fits:
+`sereno/home/layout.lua` works to a vertical budget. It tries the richest arrangement first, then gives things up in this order:
 
-1. 3-line title, full cover
+1. **Shelf rows:** on screens taller than 18 cm, two rows of the shelf first, then one.
+2. **Library counts:** the tiles first, then the same counts on one line, then none. The shelf keeps covers at 75 % or more while counts are shown.
+3. **Gaps:** they tighten from 5 to 4 to 3 units.
+4. **Header:** screens shorter than 13.5 cm always use the one-line header instead of the greeting.
+
+Within the space left, the book card tries variants from generous to compact until one fits:
+
+1. 3-line title, full cover, two rows of chips
 2. 2-line title
-3. smaller cover, no detail line
+3. smaller cover, one row of chips
 4. smaller title style
 5. smallest cover
 
-Gaps tighten (6 → 4 → 3 units) before content is dropped. Shelf covers may shrink to 60 % before the shelf disappears. A long title drops its subtitle ("Frankenstein; or, The Modern Prometheus" → "Frankenstein") rather than being cut mid-phrase.
+With no counts shown, shelf covers may shrink to 60 % before the shelf disappears. A long title drops its subtitle ("Frankenstein; or, The Modern Prometheus" → "Frankenstein") rather than being cut mid-phrase.
 
 On a device the layout measures text with KOReader's own shaping (`TextBoxWidget`), so the boxes match the glyphs. In previews and tests it uses an estimate. `spec/home_spec.lua` checks every state on seven screen sizes for nodes that leave the screen or overlap, and that both the hero and the shelf are present.
 
@@ -60,5 +82,5 @@ E-ink refreshes are slow and visible. The home screen paints once with a `flashu
 
 ## Copy
 
-- **Plain words:** *Continue reading*, *About 2 h 13 min left*, *Fairly easy read*. No icons where a word is clearer.
+- **Plain words:** *Continue reading*, *About 2 h 13 min left*, *Fairly easy read*. Icons only where a word goes with them, as in the tab bar.
 - **Translatable as a whole:** all strings go through `sereno/l10n`, and a spec checks every translation is complete and keeps its placeholders.

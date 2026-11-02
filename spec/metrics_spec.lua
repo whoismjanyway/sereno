@@ -189,6 +189,24 @@ test("analyses the sample EPUB end to end", function()
     truthy(m.pages.print >= 4, "print pages: " .. m.pages.print)
     truthy(m.pages.apnx >= 1 and m.pages.adobe >= 1 and m.pages.chars >= 1)
     eq(m.readability.ease_formula, "szigriszt_pazos")
+    eq(m.cover_path, "OEBPS/Images/cover.jpg", "cover found by file name")
+end)
+
+test("finds covers the EPUB 3 and EPUB 2 ways", function()
+    local function open(opf)
+        local files = {
+            ["META-INF/container.xml"] = '<rootfile full-path="o.opf" media-type="application/oebps-package+xml"/>',
+            ["o.opf"] = opf,
+        }
+        return Epub.open(function(n) return files[n] end, {})
+    end
+    local spine = '<spine><itemref idref="t"/></spine>'
+    local b3 = open('<metadata></metadata><manifest><item id="t" href="t.xhtml" media-type="application/xhtml+xml"/>'
+        .. '<item id="c" href="img/front.svg" media-type="image/svg+xml" properties="cover-image"/></manifest>' .. spine)
+    eq(b3.cover.path, "img/front.svg")
+    local b2 = open('<metadata><meta name="cover" content="pic"/></metadata><manifest><item id="t" href="t.xhtml" media-type="application/xhtml+xml"/>'
+        .. '<item id="pic" href="a.jpg" media-type="image/jpeg"/></manifest>' .. spine)
+    eq(b2.cover.path, "a.jpg")
 end)
 
 test("counts comic pages", function()

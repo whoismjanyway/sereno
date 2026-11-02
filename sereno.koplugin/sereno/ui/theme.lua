@@ -64,6 +64,7 @@ function Theme.new(screen)
     -- name = { px, leading, font }
     t.type = {
         micro    = { size = size(-2), leading = 1.3, font = Theme.FONTS.sans },
+        micro_bold = { size = size(-2), leading = 1.3, font = Theme.FONTS.sans_bold },
         caption  = { size = size(-1), leading = 1.3, font = Theme.FONTS.sans },
         body     = { size = size(0),  leading = 1.35, font = Theme.FONTS.sans },
         label    = { size = size(0),  leading = 1.2, font = Theme.FONTS.sans_bold },

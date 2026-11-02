@@ -3,8 +3,16 @@
 --
 -- Usage (from the repository root):
 --   luajit tools/preview.lua [out_dir] [books_dir]
--- With a folder of EPUBs, real metrics are computed for the sample books.
--- Convert with: rsvg-convert -o out.png out.svg
+--
+-- books_dir: a folder of EPUBs (e.g. Standard Ebooks builds). Each sample
+--   book found there gets its real metrics and its real cover, extracted
+--   with Sereno's own EPUB reader, as on a device without CoverBrowser.
+-- Environment:
+--   KOREADER_DIR           KOReader checkout, for the real tab bar icons
+--   SERENO_PREVIEW_COLOR=1 keep covers in colour (Kindle Colorsoft, Kobo
+--                          colour); by default they are greyscale like e-ink
+-- Needs `unzip`, plus `rsvg-convert` and ImageMagick `convert` for covers.
+-- Convert the result with: rsvg-convert -o out.png out.svg
 
 package.path = "sereno.koplugin/?.lua;" .. package.path
 local Theme = require("sereno/ui/theme")
@@ -14,7 +22,9 @@ local Presenter = require("sereno/home/presenter")
 
 local out_dir = arg[1] or "previews"
 local books_dir = arg[2]
-os.execute('mkdir -p "' .. out_dir .. '"')
+local ko_dir = os.getenv("KOREADER_DIR")
+local color = os.getenv("SERENO_PREVIEW_COLOR") == "1"
+os.execute('mkdir -p "' .. out_dir .. '/covers"')
 
 local DEVICES = {
     { id = "kindle-basic", name = "Kindle (2019) 6\" 167 dpi", width = 600, height = 800, dpi = 167 },
@@ -23,46 +33,99 @@ local DEVICES = {
     { id = "paperwhite-landscape", name = "Paperwhite 5, landscape", width = 1648, height = 1236, dpi = 300 },
 }
 
--- sample library ------------------------------------------------------------
+-- sample library: Standard Ebooks titles (public domain, CC0 cover designs)
 local SAMPLE = {
-    ["gatsby"] = { title = "The Great Gatsby", authors = { "F. Scott Fitzgerald" }, percent = 0.38, status = "reading",
+    gatsby = { title = "The Great Gatsby", authors = { "F. Scott Fitzgerald" }, percent = 0.38, status = "reading",
         epub = "f-scott-fitzgerald_the-great-gatsby.epub", metrics = { words = 49153, pages = { print = 179 }, readability = { label = "fairly_easy" } } },
-    ["pride"] = { title = "Pride and Prejudice", authors = { "Jane Austen" }, percent = 0.12, status = "reading",
+    pride = { title = "Pride and Prejudice", authors = { "Jane Austen" }, percent = 0.12, status = "reading",
         epub = "jane-austen_pride-and-prejudice.epub", metrics = { words = 122692, pages = { print = 434 } } },
-    ["frankenstein"] = { title = "Frankenstein; or, The Modern Prometheus", authors = { "Mary Shelley" },
+    frankenstein = { title = "Frankenstein; or, The Modern Prometheus", authors = { "Mary Shelley" },
         epub = "mary-shelley_frankenstein.epub", metrics = { words = 78619, pages = { print = 268 } } },
-    ["treasure"] = { title = "Treasure Island", authors = { "Robert Louis Stevenson" },
+    treasure = { title = "Treasure Island", authors = { "Robert Louis Stevenson" },
         epub = "robert-louis-stevenson_treasure-island.epub", metrics = { words = 69109, pages = { print = 247 } } },
-    ["alice"] = { title = "Alice’s Adventures in Wonderland", authors = { "Lewis Carroll" },
+    alice = { title = "Alice’s Adventures in Wonderland", authors = { "Lewis Carroll" },
         epub = "lewis-carroll_alices-adventures-in-wonderland.epub", metrics = { words = 28116, pages = { print = 125 } } },
+    dracula = { title = "Dracula", authors = { "Bram Stoker" }, epub = "bram-stoker_dracula.epub" },
+    emma = { title = "Emma", authors = { "Jane Austen" }, epub = "jane-austen_emma.epub" },
+    moby = { title = "Moby-Dick", authors = { "Herman Melville" }, epub = "herman-melville_moby-dick.epub" },
+    persuasion = { title = "Persuasion", authors = { "Jane Austen" }, epub = "jane-austen_persuasion.epub" },
+    middlemarch = { title = "Middlemarch", authors = { "George Eliot" }, epub = "george-eliot_middlemarch.epub" },
 }
 
-for i, t in ipairs({ "Middlemarch", "Moby-Dick", "Dracula", "Emma", "Persuasion" }) do
-    SAMPLE["extra" .. i] = { title = t, authors = { "Sample Author" }, metrics = { words = 90000, pages = { print = 300 + i * 20 } } }
+local function shell(cmd)
+    local p = io.popen(cmd .. " 2>/dev/null", "r")
+    local out = p:read("*a")
+    p:close()
+    return out
 end
 
+local function exists(path)
+    local f = io.open(path, "rb")
+    if f then f:close() return true end
+    return false
+end
+
+local function extract(path, name)
+    local d = shell(string.format("unzip -p %q %q", path, name))
+    return d ~= "" and d or nil
+end
+
+local function base64(path)
+    return (shell(string.format("base64 -w0 %q", path)))
+end
+
+-- covers: extracted from the EPUB with Sereno's own analyser (cover_path)
+local cover_png = {}
 if books_dir then
     local Analyzer = require("sereno/metrics/analyzer")
-    local function extract(path, name)
-        local p = io.popen(string.format("unzip -p %q %q 2>/dev/null", path, name), "r")
-        local d = p:read("*a"); p:close()
-        return d ~= "" and d or nil
+    for id, b in pairs(SAMPLE) do
+        local path = books_dir .. "/" .. b.epub
+        if exists(path) then
+            local m = Analyzer.analyze(path, { extract = extract })
+            if m then
+                b.metrics = m
+                if m.cover_path then
+                    local raw = string.format("%s/covers/%s.raw", out_dir, id)
+                    local f = io.open(raw, "wb")
+                    f:write(extract(path, m.cover_path) or "")
+                    f:close()
+                    local png = string.format("%s/covers/%s.png", out_dir, id)
+                    local mono = color and "" or "-colorspace Gray"
+                    if m.cover_path:match("%.svg$") then
+                        shell(string.format("rsvg-convert -w 400 -o %q %q && convert %q %s %q", png, raw, png, mono, png))
+                    else
+                        shell(string.format("convert %q -resize 400x %s %q", raw, mono, png))
+                    end
+                    os.remove(raw)
+                    if exists(png) then cover_png[id] = base64(png) end
+                end
+            end
+        end
     end
-    for _, b in pairs(SAMPLE) do
-        local m = b.epub and Analyzer.analyze(books_dir .. "/" .. b.epub, { extract = extract })
-        if m then b.metrics = m end
+end
+
+local icon_svg = {}
+local function iconData(name)
+    if icon_svg[name] == nil then
+        icon_svg[name] = false
+        local path = ko_dir and (ko_dir .. "/resources/icons/mdlight/" .. name .. ".svg")
+        if path and exists(path) then icon_svg[name] = base64(path) end
     end
+    return icon_svg[name] or nil
 end
 
 local STATES = {
-    reading = { history = { "gatsby", "pride" }, new = { "frankenstein", "treasure", "alice", "extra1", "extra2", "extra3", "extra4", "extra5" } },
-    finished = { history = { "gatsby", "pride" }, new = { "frankenstein", "treasure", "alice" }, finish = "gatsby" },
-    start = { history = {}, new = { "frankenstein", "treasure", "alice", "pride" } },
-    empty = { history = {}, new = {} },
+    reading = { history = { "gatsby", "pride" }, new = { "frankenstein", "treasure", "alice", "dracula", "emma", "moby", "persuasion", "middlemarch" },
+        stats = { unread = 128, in_progress = 3, finished = 27 } },
+    finished = { history = { "gatsby", "pride" }, new = { "frankenstein", "treasure", "alice", "dracula", "emma", "moby", "persuasion" }, finish = "gatsby",
+        stats = { unread = 128, in_progress = 2, finished = 28 } },
+    start = { history = {}, new = { "frankenstein", "treasure", "alice", "pride", "dracula", "emma", "moby" },
+        stats = { unread = 131, in_progress = 0, finished = 0 } },
+    empty = { history = {}, new = {}, stats = { unread = 0, in_progress = 0, finished = 0 } },
 }
 
 -- SVG output ----------------------------------------------------------------
-local INK = { text = "#000000", secondary = "#444444", hairline = "#888888", track = "#cccccc" }
+local INK = { text = "#000000", secondary = "#444444", hairline = "#888888", track = "#cccccc", paper = "#ffffff" }
 
 local function esc(s)
     return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
@@ -74,62 +137,69 @@ end
 
 local function weight(font) return font:find("Bold") and "bold" or "normal" end
 
--- the same wrapping the layout uses to size its boxes
-local function wrap(text, style, width, max_lines)
-    return Layout.wrap(text, style, width, max_lines)
-end
-
-local function coverSvg(t, n, out)
+local function typesetCover(t, n, out)
     local b = n.book
     out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" fill="#fff" stroke="#000" stroke-width="%d"/>',
         n.x, n.y, n.w, n.h, t.hairline)
-    -- typeset cover: title in serif, author in small sans, like a plain hardback
     local inset = math.floor(n.w * 0.1)
     local title_style = { size = math.max(8, math.floor(n.w / 7)), font = "NotoSerif" }
-    local lines = wrap(Presenter.shortTitle(b.title or ""), title_style, n.w - 2 * inset, 4)
+    local lines = Layout.wrap(Presenter.shortTitle(b.title or ""), title_style, n.w - 2 * inset, 4)
     local y = n.y + math.floor(n.h * 0.22)
     for _, l in ipairs(lines) do
         y = y + math.floor(title_style.size * 1.2)
         out[#out + 1] = string.format('<text x="%d" y="%d" font-family="Noto Serif, serif" font-size="%d" text-anchor="middle">%s</text>',
             n.x + n.w / 2, y, title_style.size, esc(l))
     end
-    local rule_y = y + math.floor(title_style.size * 0.8)
-    out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" fill="#000"/>', n.x + n.w / 2 - n.w / 10, rule_y, n.w / 5, t.hairline)
-    local author = type(b.authors) == "table" and b.authors[1] or b.authors
-    if author then
-        local size = math.max(6, math.floor(n.w / 13))
-        out[#out + 1] = string.format('<text x="%d" y="%d" font-family="Noto Sans, sans-serif" font-size="%d" text-anchor="middle" letter-spacing="%0.1f">%s</text>',
-            n.x + n.w / 2, n.y + n.h - math.floor(n.h * 0.12), size, size * 0.08, esc(author:upper()))
-    end
 end
 
 local function render(t, nodes, path, title)
     local out = {
-        string.format('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">', t.width, t.height, t.width, t.height),
+        string.format('<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="%d" height="%d" viewBox="0 0 %d %d">', t.width, t.height, t.width, t.height),
         string.format('<rect width="%d" height="%d" fill="#fff"/>', t.width, t.height),
         "<!-- " .. esc(title) .. " -->",
     }
     for _, n in ipairs(nodes) do
         if n.kind == "text" then
             local style = t.type[n.style]
-            local lines = wrap(n.text or "", style, n.w, n.max_lines or 1)
+            local lines = Layout.wrap(n.text or "", style, n.w, n.max_lines or 1)
             local anchor, x = "start", n.x
             if n.align == "center" then anchor, x = "middle", n.x + n.w / 2
             elseif n.align == "right" then anchor, x = "end", n.x + n.w end
-            local spacing = n.id == "label" and string.format(' letter-spacing="%0.1f"', style.size * 0.12) or ""
+            local spacing = (n.style == "micro" and (n.text or ""):upper() == n.text) and string.format(' letter-spacing="%0.1f"', style.size * 0.1) or ""
             for i, l in ipairs(lines) do
-                -- baseline at ~ 78% of the line box
                 local y = n.y + (i - 1) * style.line + math.floor(style.line * 0.5 + style.size * 0.36)
                 out[#out + 1] = string.format('<text x="%d" y="%d" font-family="%s" font-weight="%s" font-size="%d" fill="%s" text-anchor="%s"%s>%s</text>',
                     x, y, family(style.font), weight(style.font), style.size, INK[n.color] or INK.text, anchor, spacing, esc(l))
             end
+        elseif n.kind == "box" then
+            out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="%s" stroke="%s" stroke-width="%d"/>',
+                n.x, n.y, n.w, n.h, n.radius or 0, n.fill and INK[n.fill] or "none", n.border and INK[n.border] or "none", n.border and (n.bw or 1) or 0)
         elseif n.kind == "cover" then
-            coverSvg(t, n, out)
+            local id
+            for k, b in pairs(SAMPLE) do if b == n.book or b.title == (n.book and n.book.title) then id = k end end
+            if id and cover_png[id] then
+                out[#out + 1] = string.format('<image x="%d" y="%d" width="%d" height="%d" preserveAspectRatio="xMidYMax slice" xlink:href="data:image/png;base64,%s"/>',
+                    n.x, n.y, n.w, n.h, cover_png[id])
+                out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="#000" stroke-width="%d"/>', n.x, n.y, n.w, n.h, t.hairline)
+            else
+                typesetCover(t, n, out)
+            end
+        elseif n.kind == "icon" then
+            local data = iconData(n.name)
+            if data then
+                out[#out + 1] = string.format('<image x="%d" y="%d" width="%d" height="%d" opacity="%s" xlink:href="data:image/svg+xml;base64,%s"/>',
+                    n.x, n.y, n.w, n.h, n.color == "text" and "1" or "0.75", data)
+            else
+                out[#out + 1] = string.format('<circle cx="%d" cy="%d" r="%d" fill="none" stroke="%s" stroke-width="%d"/>',
+                    n.x + n.w / 2, n.y + n.h / 2, n.w / 2.5, INK[n.color] or INK.text, t.rule)
+            end
         elseif n.kind == "rule" then
             out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" fill="%s"/>', n.x, n.y, n.w, n.h, INK[n.color] or INK.text)
         elseif n.kind == "bar" then
-            out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" fill="%s"/>', n.x, n.y + n.h / 2 - t.hairline / 2, n.w, t.hairline, INK.hairline)
-            out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" fill="#000"/>', n.x, n.y, math.floor(n.w * n.fraction), n.h)
+            local track = n.inset and "#ffffff" or INK.track
+            out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="%s" stroke="%s" stroke-width="%d"/>',
+                n.x, n.y, n.w, n.h, n.h / 2, track, n.inset and "#000" or "none", n.inset and 1 or 0)
+            out[#out + 1] = string.format('<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="#000"/>', n.x, n.y, math.floor(n.w * n.fraction), n.h, n.h / 2)
         end
     end
     out[#out + 1] = "</svg>"
@@ -156,6 +226,7 @@ for _, dev in ipairs(DEVICES) do
             end,
             new_books = function() return spec.new end,
             metrics = function(id) return SAMPLE[id] and SAMPLE[id].metrics end,
+            stats = function() return spec.stats end,
         }
         local model = Context.build(sources, { now = now, shelf_size = 10 })
         local copy = Presenter.present(model, function(s) return s end, { time = "19:48", battery = 82 })

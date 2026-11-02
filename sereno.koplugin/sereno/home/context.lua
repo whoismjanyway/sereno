@@ -68,6 +68,7 @@ end
   book_info(file)   -> { title, authors, series, series_index, percent, status, been_opened } or nil if missing
   new_books(n)      -> list of unopened files, newest first (optional)
   metrics(file)     -> cached metrics record or nil (optional)
+  stats()           -> { unread, in_progress, finished } library counts (optional)
 @tparam table opts { now = os.date("*t") table, page_method, wpm, shelf_size = 4 }
 ]]
 function Context.build(sources, opts)
@@ -79,6 +80,7 @@ function Context.build(sources, opts)
         is_night = isNight(now.hour),
         date = now,
         shelf = {},
+        stats = sources.stats and sources.stats() or nil,
     }
 
     local seen = {}

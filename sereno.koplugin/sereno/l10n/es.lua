@@ -4,6 +4,7 @@ return {
 
     ["%1 (%2 characters each)"] = "%1 (%2 caracteres cada una)",
     ["%1 (median of %2 editions)"] = "%1 (mediana de %2 ediciones)",
+    ["%1 left"] = "Quedan %1",
     ["%1 of reading"] = "%1 de lectura",
     ["%1 pages"] = "%1 páginas",
     ["%1 words"] = "%1 palabras",
@@ -51,10 +52,15 @@ return {
     ["Finished"] = "Terminado",
     ["Flesch–Kincaid grade"] = "Grado Flesch–Kincaid",
     ["Friday"] = "viernes",
+    ["Good afternoon"] = "Buenas tardes",
+    ["Good evening"] = "Buenas noches",
+    ["Good morning"] = "Buenos días",
+    ["Good night"] = "Buenas noches",
     ["Gunning fog index"] = "Índice Gunning fog",
     ["Hides options according to the chosen level. Uses KOReader's own menu order file: KOReader itself is not modified and everything can be undone."] =
         "Oculta opciones según el nivel elegido. Usa el archivo de orden de menús de KOReader: KOReader no se modifica y todo se puede deshacer.",
     ["History"] = "Historial",
+    ["Home"] = "Inicio",
     ["Home screen"] = "Pantalla de inicio",
     ["Home screen after closing a book"] = "Inicio al cerrar un libro",
     ["Images"] = "Imágenes",
@@ -80,6 +86,7 @@ return {
     ["Only what you use while reading: contents, font, light, dictionary, history."] =
         "Solo lo que usas al leer: índice, fuente, luz, diccionario, historial.",
     ["Page %1 of %2 · %3%"] = "Página %1 de %2 · %3 %",
+    ["Page %1 of %2"] = "Página %1 de %2",
     ["Page counts"] = "Número de páginas",
     ["Pages & readability"] = "Páginas y legibilidad",
     ["Print model (Sereno)"] = "Modelo impreso (Sereno)",
@@ -92,6 +99,7 @@ return {
     ["Reset customization"] = "Restablecer personalización",
     ["Saturday"] = "sábado",
     ["Search"] = "Buscar",
+    ["See all"] = "Ver todo",
     ["Search menus…"] = "Buscar en los menús…",
     ["September"] = "septiembre",
     ["Sereno"] = "Sereno",
@@ -114,6 +122,7 @@ return {
     ["Tuesday"] = "martes",
     ["Typesets each book on a reference printed page, so the count matches a paperback and never changes with your font settings."] =
         "Compone cada libro en una página impresa de referencia, así el número se parece al de un libro de bolsillo y no cambia con tu configuración de letra.",
+    ["Unread"] = "Sin leer",
     ["Up next"] = "A continuación",
     ["Very demanding read"] = "Lectura muy exigente",
     ["Very easy read"] = "Lectura muy fácil",

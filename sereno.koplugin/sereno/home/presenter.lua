@@ -55,11 +55,17 @@ function Presenter.present(model, _, status, sep)
     local copy = {
         status_left = fill(_("%1, %2 %3"), _(DAYS[d.wday]), d.day, _(MONTHS[d.month])),
         status_right = status.time or "",
+        greeting = ({ night = _("Good night"), morning = _("Good morning"),
+            afternoon = _("Good afternoon"), evening = _("Good evening") })[model.part_of_day or "evening"],
+        date = fill(_("%1, %2 %3"), _(DAYS[d.wday]), d.day, _(MONTHS[d.month])),
+        see_all = _("See all"),
+        -- icons are KOReader's own (resources/icons/mdlight)
         nav = {
-            { id = "library", label = _("Library") },
-            { id = "history", label = _("History") },
-            { id = "collections", label = _("Collections") },
-            { id = "search", label = _("Search") },
+            { id = "home", label = _("Home"), icon = "home", active = true },
+            { id = "library", label = _("Library"), icon = "appbar.filebrowser" },
+            { id = "history", label = _("History"), icon = "book.opened" },
+            { id = "collections", label = _("Collections"), icon = "star.empty" },
+            { id = "search", label = _("Search"), icon = "appbar.search" },
         },
         empty_title = _("Your library is empty"),
         empty_body = _("Copy some books to your reader, then open the Library to find them."),
@@ -77,6 +83,14 @@ function Presenter.present(model, _, status, sep)
         copy.hero_label = _("Start here")
     end
     copy.shelf_label = (model.state == "reading") and _("On your shelf") or _("Up next")
+
+    if model.stats then
+        copy.stats = {
+            { value = thousands(model.stats.in_progress or 0, sep), label = _("Reading") },
+            { value = thousands(model.stats.unread or 0, sep), label = _("Unread") },
+            { value = thousands(model.stats.finished or 0, sep), label = _("Finished") },
+        }
+    end
 
     local hero = model.hero
     if hero then
@@ -109,6 +123,29 @@ function Presenter.present(model, _, status, sep)
                 hero.time_line = fill(_("About %1 to read"), Context.formatDuration(hero.minutes_total, duration_words))
             end
         end
+        -- short facts set as chips under the progress bar
+        hero.percent_label = (hero.percent or 0) > 0 and model.state == "reading"
+            and fill("%1%", math.floor(hero.percent * 100 + 0.5)) or nil
+        hero.chips = {}
+        if hero.page_total then
+            if model.state == "reading" and hero.page_now then
+                hero.chips[#hero.chips + 1] = fill(_("Page %1 of %2"), thousands(hero.page_now, sep), thousands(hero.page_total, sep))
+            else
+                hero.chips[#hero.chips + 1] = fill(_("%1 pages"), thousands(hero.page_total, sep))
+            end
+        end
+        if model.state == "reading" and hero.minutes_left and (hero.percent or 0) > 0 then
+            hero.chips[#hero.chips + 1] = fill(_("%1 left"), Context.formatDuration(hero.minutes_left, duration_words))
+        elseif hero.minutes_total then
+            hero.chips[#hero.chips + 1] = Context.formatDuration(hero.minutes_total, duration_words)
+        end
+        if hero.readability and READABILITY[hero.readability] then
+            hero.chips[#hero.chips + 1] = _(READABILITY[hero.readability])
+        end
+        if model.state == "finished" and model.up_next then
+            hero.next_line = fill(_("Next: %1"), model.up_next.title)
+        end
+
         local details = {}
         if hero.readability and READABILITY[hero.readability] then details[#details + 1] = _(READABILITY[hero.readability]) end
         if hero.words then details[#details + 1] = fill(_("%1 words"), thousands(hero.words, sep)) end
@@ -120,6 +157,7 @@ function Presenter.present(model, _, status, sep)
     for _i, book in ipairs(model.shelf or {}) do
         if type(book.authors) == "table" then book.authors = table.concat(book.authors, ", ") end
         book.short_title = Presenter.shortTitle(book.title)
+        book.shelf_progress = book.reason == "in_progress" and book.percent or nil
         if book.reason == "series" then
             book.shelf_meta = _("Next in series")
         elseif book.reason == "in_progress" then

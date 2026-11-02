@@ -250,7 +250,8 @@ function Sereno:homeSources()
         book_info = function(file) return Library.bookInfo(file, peek(file)) end,
         new_books = Library.newBooks,
         metrics = peek,
-        cover = Library.cover,
+        stats = Library.stats,
+        cover = function(file) return Library.cover(file, peek(file)) end,
     }
 end
 
@@ -314,9 +315,14 @@ function Sereno:onHomeAction(action, home)
         end
         return
     end
+    local target = action.target
+    if target == "home" then
+        -- already here: just refresh the data
+        if home then home:update() end
+        return
+    end
     -- navigation targets live in the file manager
     self:closeHome()
-    local target = action.target
     local function go()
         local FileManager = require("apps/filemanager/filemanager")
         local fm = FileManager.instance
