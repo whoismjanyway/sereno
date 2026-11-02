@@ -30,6 +30,17 @@ jobs:
 
       - name: Syntax check with LuaJIT
         run: |
-          for f in $(find sereno.koplugin -name '*.lua'); do
-            luajit -bl "$f" > /dev/null || { echo "syntax error in $f"; exit 1; }
+          for f in $(find sereno.koplugin tools spec -name '*.lua'); do
+            luajit -e "assert(loadfile('$f'))" || { echo "syntax error in $f"; exit 1; }
           done
+
+      - name: Render home screen previews
+        run: |
+          sudo apt-get install -y librsvg2-bin
+          luajit tools/preview.lua previews ../books
+          for f in previews/*.svg; do rsvg-convert -o "${f%.svg}.png" "$f"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: home-previews
+          path: previews/*.png

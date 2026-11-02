@@ -61,7 +61,7 @@ for _i, ctx in ipairs({ "filemanager", "reader" }) do
         truthy(#order["KOMenu:disabled"] > 0, "Reading level hides options")
     end)
     test("customizing an item stores an override", function()
-        local customize = findItem(p:getMainMenu(), "Customize levels")
+        local customize = findItem(p:getTiersMenu(), "Customize levels")
         local menus = customize.sub_item_table_func()
         local fake_tm = { updateItems = function() end }
         for _j, m in ipairs(menus) do
@@ -74,6 +74,102 @@ for _i, ctx in ipairs({ "filemanager", "reader" }) do
         menus[1].callback()
     end)
 end
+
+H.describe("plugin smoke test: home screen and metrics")
+
+local function setupLibrary()
+    local dir = S.settings_dir .. "/books"
+    os.execute(string.format('mkdir -p %q && cp spec/fixtures/sample.epub %q/novel.epub && cp spec/fixtures/sample.epub %q/other.epub && cp spec/fixtures/sample.cbz %q/comic.cbz',
+        dir, dir, dir, dir))
+    S.home_dir = dir
+    package.loaded["readhistory"].hist = { { file = dir .. "/novel.epub" } }
+    package.loaded["ui/widget/booklist"].getBookInfo = function(file)
+        if file:find("novel", 1, true) then return { been_opened = true, status = "reading", percent_finished = 0.4 } end
+        return { been_opened = false }
+    end
+    return dir
+end
+
+test("the home screen builds, paints and counts missing books", function()
+    local dir = setupLibrary()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    p:showHome()
+    local home = S.shown[#S.shown]
+    eq(home.name, "sereno_home")
+    eq(home.model.state, "reading")
+    eq(home.model.hero.file, dir .. "/novel.epub")
+    truthy(#home.model.shelf >= 1, "unopened books on the shelf")
+    home:onShow()
+    local bb = S.fakeBB()
+    home:paintTo(bb, 0, 0)
+    truthy(#bb.calls > 5, "drew something")
+    -- background counting fills the metrics cache, then the screen updates
+    for _i = 1, 10 do S.runScheduled() end
+    local Service = require("sereno/metrics/service")
+    truthy(Service.peek(dir .. "/novel.epub"), "hero counted")
+    truthy(home.model.hero.page_total and home.model.hero.page_total > 0, "page count shown after update")
+    truthy(home.model.hero.progress_line:find("Page", 1, true), home.model.hero.progress_line)
+    eq(home.model.hero.title, "Cien años de prueba: una novela", "title read from the book itself")
+end)
+
+test("taps open books and navigate", function()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    p:showHome()
+    local home = S.shown[#S.shown]
+    local tapped = {}
+    for _i, n in ipairs(home.nodes) do
+        if n.kind == "tap" and not tapped[n.action.type .. (n.action.target or "")] then
+            tapped[n.action.type .. (n.action.target or "")] = true
+            home:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } })
+        end
+    end
+    truthy(#S.opened >= 1, "a book was opened")
+    truthy(H.contains(S.fm_calls, "history") and H.contains(S.fm_calls, "search"), "navigation reached the file manager")
+end)
+
+test("long-press and file dialog show the metrics dialog", function()
+    local dir = setupLibrary()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    local before = #S.shown
+    p:showMetrics(dir .. "/novel.epub")
+    local page = S.shown[#S.shown]
+    truthy(#S.shown > before and page.kv_pairs, "key/value page shown")
+    local keys = {}
+    for _i, row in ipairs(page.kv_pairs) do keys[#keys + 1] = row[1] end
+    local all = table.concat(keys, "|")
+    truthy(all:find("Print model", 1, true) and all:find("Words", 1, true) and all:find("Readability", 1, true), all)
+    local row = S.file_dialog_rows.sereno_metrics(dir .. "/novel.epub", true)
+    eq(row[1].text, "Pages & readability")
+    eq(S.file_dialog_rows.sereno_metrics(dir, false), nil)
+end)
+
+test("page counts menu walks and switches method", function()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    local menu = p:getPagesMenu()
+    walk(menu, 0)
+    menu[2].callback()
+    eq(p.settings:readSetting("page_method"), "downloaded")
+    menu[1].callback()
+end)
+
+test("counting a whole folder", function()
+    local dir = setupLibrary()
+    local ui = newUI("filemanager")
+    ui.file_chooser = { path = dir }
+    local p = Sereno:new{ ui = ui }
+    p:countFolder()
+    local msg = S.shown[#S.shown]
+    truthy(msg.text and msg.text:find("Counted", 1, true), msg.text)
+end)
+
+test("the reader asks for the home screen after closing a book", function()
+    local p = Sereno:new{ ui = newUI("reader") }
+    p:onCloseDocument()
+    local before = #S.shown
+    Sereno:new{ ui = newUI("filemanager") }
+    S.runScheduled()
+    truthy(#S.shown > before and S.shown[#S.shown].name == "sereno_home", "home shown")
+end)
 
 H.describe("plugin smoke test: undo")
 test("the user's own order file survives enable/disable", function()

@@ -1,14 +1,15 @@
 --[[--
 Sereno: a calmer KOReader, without patching KOReader.
 
-Phase 1:
-  * Menus by level (Reading / Everyday / Everything), built on KOReader's own
-    per-user menu order file and its "KOMenu:disabled" list. No widget is
-    monkey-patched, so Sereno can coexist with other UI plugins and survive
-    KOReader updates. The file is regenerated from KOReader's current
-    defaults at every start, so new menu entries are never lost.
-  * A refresh coordinator for e-ink (sereno/refresh.lua), exposed as
-    Sereno.refresh for widgets (the home screen arrives in phase 2).
+* Tiered menus (Reading / Everyday / Everything), built on KOReader's own
+  per-user menu order file and its "KOMenu:disabled" list. No widget is
+  monkey-patched, so Sereno can coexist with other UI plugins and survive
+  KOReader updates.
+* A contextual home screen designed from physical sizes (sereno/home).
+* Print-like page counts, word counts and readability for every book,
+  computed without opening it (sereno/metrics).
+* A refresh coordinator for e-ink (sereno/eink/refresh), shared by all
+  of Sereno's widgets and available to other plugins via getRefresh().
 
 @module koplugin.Sereno
 ]]
@@ -19,6 +20,10 @@ local Tiers = require("sereno/menu/tiers")
 local TierDefaults = require("sereno/menu/tier_defaults")
 local OrderFile = require("sereno/menu/orderfile")
 local Refresh = require("sereno/eink/refresh")
+local HomeScreen = require("sereno/home/homescreen")
+local Library = require("sereno/library")
+local MetricsDialog = require("sereno/metrics/dialog")
+local MetricsService = require("sereno/metrics/service")
 
 local DataStorage = require("datastorage")
 local Dbg = require("dbg")
@@ -51,6 +56,11 @@ local TIER_HELP = {
 -- Shared across ReaderUI and FileManager instances of the plugin.
 local labels = {}      -- menu id -> visible text, collected from menu_items
 local shared_refresh   -- one coordinator for the whole app
+local session = {      -- survives switching between the file manager and the reader
+    home_shown_at_boot = false,
+    home_after_reader = false,
+    home = nil,        -- the HomeScreen currently shown
+}
 
 local function getRefresh()
     if not shared_refresh then
@@ -84,6 +94,17 @@ function Sereno:init()
     if self:isEnabled() then
         -- Menus are built lazily on first open, so writing now is in time.
         self:applyTiers(false)
+    end
+    if not self.ui.document then
+        self:addFileDialogButtons()
+        -- Home at start-up, or after closing a book
+        local at_boot = not session.home_shown_at_boot and self.settings:isTrue("home_at_start")
+        local after_reader = session.home_after_reader and self.settings:nilOrTrue("home_after_reader")
+        session.home_shown_at_boot = true
+        session.home_after_reader = false
+        if at_boot or after_reader then
+            UIManager:nextTick(function() self:showHome() end)
+        end
     end
 end
 
@@ -180,6 +201,9 @@ function Sereno:onDispatcherRegisterActions()
     Dispatcher:registerAction("sereno_tier_all", {
         category = "none", event = "SerenoSetTier", arg = Tiers.ALL, title = _("Sereno: Everything menus"), general = true,
     })
+    Dispatcher:registerAction("sereno_show_home", {
+        category = "none", event = "SerenoShowHome", title = _("Sereno: home screen"), general = true,
+    })
 end
 
 function Sereno:onSerenoCycleTier()
@@ -206,6 +230,167 @@ end
 
 function Sereno:onResume()
     if shared_refresh then shared_refresh:resume() end
+end
+
+--- Home screen
+
+function Sereno:homeOptions()
+    return {
+        page_method = self.settings:readSetting("page_method", "print"),
+        wpm = self.settings:readSetting("wpm", 230),
+        translate = _,
+        thousands = _.catalogue.thousands_separator,
+    }
+end
+
+function Sereno:homeSources()
+    local peek = MetricsService.peek
+    return {
+        history = Library.history,
+        book_info = function(file) return Library.bookInfo(file, peek(file)) end,
+        new_books = Library.newBooks,
+        metrics = peek,
+        cover = Library.cover,
+    }
+end
+
+function Sereno:showHome()
+    if session.home then UIManager:close(session.home) end
+    Library.invalidate()
+    local home
+    home = HomeScreen:new{
+        sources = self:homeSources(),
+        options = self:homeOptions(),
+        refresh = getRefresh(),
+        on_action = function(action) self:onHomeAction(action, home) end,
+        on_hold = function(file) self:showMetrics(file, home) end,
+    }
+    session.home = home
+    UIManager:show(home)
+    self:countMissing(home)
+end
+
+--[[--
+Counts, one book per tick, the books on the home screen that have no
+metrics yet, then redraws once. Runs while the user looks at the screen,
+so opening a book is never slowed down.
+]]
+function Sereno:countMissing(home)
+    local queue = {}
+    local model = home.model or {}
+    if model.hero then queue[#queue + 1] = model.hero.file end
+    for _i, b in ipairs(model.shelf or {}) do queue[#queue + 1] = b.file end
+    local changed = false
+    local function step()
+        if session.home ~= home then return end
+        local file = table.remove(queue, 1)
+        if not file then
+            if changed then home:update() end
+            return
+        end
+        if not MetricsService.peek(file) then
+            if MetricsService.get(file) then changed = true end
+        end
+        UIManager:scheduleIn(0.05, step)
+    end
+    UIManager:scheduleIn(0.5, step)
+end
+
+function Sereno:closeHome()
+    if session.home then
+        UIManager:close(session.home)
+        session.home = nil
+    end
+end
+
+function Sereno:onHomeAction(action, home)
+    if not action then return end
+    if action.type == "open" then
+        self:closeHome()
+        if self.ui.document then
+            if action.file ~= self.ui.document.file then self.ui:switchDocument(action.file) end
+        else
+            require("apps/reader/readerui"):showReader(action.file)
+        end
+        return
+    end
+    -- navigation targets live in the file manager
+    self:closeHome()
+    local target = action.target
+    local function go()
+        local FileManager = require("apps/filemanager/filemanager")
+        local fm = FileManager.instance
+        if not fm then return end
+        if target == "history" and fm.history then fm.history:onShowHist()
+        elseif target == "collections" and fm.collections then fm.collections:onShowColl()
+        elseif target == "search" and fm.filesearcher then fm.filesearcher:onShowFileSearch() end
+    end
+    if self.ui.document then
+        -- leave the book first; the file manager comes back by itself
+        session.home_after_reader = false
+        self.ui:onClose()
+        UIManager:nextTick(go)
+    else
+        go()
+    end
+end
+
+function Sereno:onCloseDocument()
+    -- the file manager instance created next will show the home screen
+    if self.ui.document then session.home_after_reader = true end
+end
+
+function Sereno:onSerenoShowHome()
+    self:showHome()
+    return true
+end
+
+--- Book metrics
+
+function Sereno:showMetrics(file)
+    local opts = self:homeOptions()
+    opts.on_change = function()
+        if session.home then session.home:update() end
+    end
+    MetricsDialog.show(file, opts)
+end
+
+function Sereno:addFileDialogButtons()
+    if not self.ui.addFileDialogButtons then return end
+    self.ui:addFileDialogButtons("sereno_metrics", function(file, is_file)
+        if not is_file then return nil end
+        return {
+            {
+                text = _("Pages & readability"),
+                callback = function()
+                    local chooser = self.ui.file_chooser
+                    if chooser and chooser.file_dialog then UIManager:close(chooser.file_dialog) end
+                    self:showMetrics(file)
+                end,
+            },
+        }
+    end)
+end
+
+function Sereno:countFolder()
+    local chooser = self.ui.file_chooser
+    local dir = chooser and chooser.path
+    if not dir then return end
+    local files = Library.booksIn(dir, true)
+    if #files == 0 then
+        UIManager:show(InfoMessage:new{ text = _("No books in this folder.") })
+        return
+    end
+    local counted, failed, skipped = MetricsService.countAll(files, {
+        progress = function(i, total, name) return T(_("Counting pages… %1 / %2\n%3\n\nTap to stop."), i, total, name) end,
+    })
+    UIManager:show(InfoMessage:new{
+        text = T(_("Counted %1 books. %2 were already counted, %3 could not be read."), counted, skipped, failed),
+    })
+end
+
+function Sereno:onFileRename(old, new)
+    if old and new then pcall(MetricsService.fileRenamed, old, new) end
 end
 
 --- Menu
@@ -244,6 +429,106 @@ end
 function Sereno:getMainMenu()
     local menu = {
         {
+            text = _("Home screen"),
+            callback = function(touchmenu_instance)
+                touchmenu_instance:closeMenu()
+                self:showHome()
+            end,
+        },
+        {
+            text = _("Start with the home screen"),
+            checked_func = function() return self.settings:isTrue("home_at_start") end,
+            callback = function()
+                self.settings:saveSetting("home_at_start", not self.settings:isTrue("home_at_start"))
+                self.settings:flush()
+            end,
+        },
+        {
+            text = _("Home screen after closing a book"),
+            checked_func = function() return self.settings:nilOrTrue("home_after_reader") end,
+            callback = function()
+                self.settings:saveSetting("home_after_reader", not self.settings:nilOrTrue("home_after_reader"))
+                self.settings:flush()
+            end,
+            separator = true,
+        },
+        {
+            text = _("Page counts"),
+            sub_item_table_func = function() return self:getPagesMenu() end,
+        },
+        {
+            text = _("Tiered menus"),
+            sub_item_table_func = function() return self:getTiersMenu() end,
+            separator = true,
+        },
+        {
+            text = _("Refresh budget"),
+            keep_menu_open = true,
+            callback = function() self:showRefreshStats() end,
+        },
+    }
+    return menu
+end
+
+function Sereno:getPagesMenu()
+    local menu = {}
+    for _i, method in ipairs(MetricsDialog.METHODS) do
+        menu[#menu + 1] = {
+            text = _(MetricsDialog.METHOD_LABELS[method]),
+            help_text = method == "print" and _("Typesets each book on a reference printed page, so the count matches a paperback and never changes with your font settings.") or nil,
+            radio = true,
+            checked_func = function() return self.settings:readSetting("page_method", "print") == method end,
+            callback = function()
+                self.settings:saveSetting("page_method", method)
+                self.settings:flush()
+                if session.home then session.home.options = self:homeOptions(); session.home:update() end
+            end,
+            separator = method == "chars",
+        }
+    end
+    local speeds = { 180, 230, 280, 330 }
+    menu[#menu + 1] = {
+        text_func = function() return T(_("Reading speed: %1 words per minute"), self.settings:readSetting("wpm", 230)) end,
+        sub_item_table_func = function()
+            local items = {}
+            for _j, wpm in ipairs(speeds) do
+                items[#items + 1] = {
+                    text = T(_("%1 words per minute"), wpm),
+                    radio = true,
+                    checked_func = function() return self.settings:readSetting("wpm", 230) == wpm end,
+                    callback = function()
+                        self.settings:saveSetting("wpm", wpm)
+                        self.settings:flush()
+                    end,
+                }
+            end
+            return items
+        end,
+    }
+    if self.ui.document then
+        menu[#menu + 1] = {
+            text = _("This book: pages & readability"),
+            callback = function(touchmenu_instance)
+                touchmenu_instance:closeMenu()
+                self:showMetrics(self.ui.document.file)
+            end,
+        }
+    else
+        menu[#menu + 1] = {
+            text = _("Count all books in this folder"),
+            help_text = _("Counts pages, words and readability for every book in the current folder and its subfolders. Already counted books are skipped."),
+            callback = function(touchmenu_instance)
+                touchmenu_instance:closeMenu()
+                self:countFolder()
+            end,
+        }
+    end
+    return menu
+end
+
+function Sereno:getTiersMenu()
+    local menu = {
+        {
             text = _("Tiered menus"),
             help_text = _("Hides options according to the chosen level. Uses KOReader's own menu order file: KOReader itself is not modified and everything can be undone."),
             checked_func = function() return self:isEnabled() end,
@@ -278,17 +563,11 @@ function Sereno:getMainMenu()
         text = _("Reset customization"),
         enabled_func = function() return next(self:getOverrides()) ~= nil end,
         keep_menu_open = true,
-        callback = function(touchmenu_instance)
+        callback = function()
             self.settings:delSetting("overrides")
             self.settings:flush()
             self:applyTiers(true)
         end,
-        separator = true,
-    }
-    menu[#menu + 1] = {
-        text = _("Refresh budget"),
-        keep_menu_open = true,
-        callback = function() self:showRefreshStats() end,
     }
     return menu
 end

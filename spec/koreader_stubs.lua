@@ -30,7 +30,8 @@ function Widget:paintTo() end
 function Widget:getLineHeight() return 20 end
 function Widget:getWidth() return self.width or 100 end
 function Widget:handleEvent() end
-setmetatable(Widget, { __index = function() return function() end end })
+function Widget:onCloseWidget() end
+function Widget:onShow() end
 S.Widget = Widget
 
 local function widgetModule(name)
@@ -46,7 +47,8 @@ stub("device", setmetatable({
     },
     isTouchDevice = function() return true end, hasExitOptions = function() return true end,
     canRestart = function() return true end, hasFrontlight = function() return true end,
-    hasKeys = function() return false end, model = "stub",
+    hasKeys = function() return false end, model = "stub", hasBattery = function() return true end,
+    getPowerDevice = function() return { getCapacity = function() return 77 end, isCharging = function() return false end } end,
 }, { __index = function() return function() return false end end }))
 stub("datastorage", {
     getSettingsDir = function() return S.settings_dir end,
@@ -76,6 +78,7 @@ stub("ui/uimanager", {
     nextTick = function(_, fn) S.scheduled[#S.scheduled + 1] = fn end,
     unschedule = function() end,
     getTopmostVisibleWidget = function() return nil end,
+    forceRePaint = function() end,
 })
 stub("ui/widget/container/widgetcontainer", Widget:extend({}))
 stub("ui/widget/container/inputcontainer", Widget:extend({}))
@@ -90,17 +93,33 @@ for _, name in ipairs({
 stub("ui/font", { getFace = function(_, name, size) return { name = name, size = size, orig_size = size } end })
 stub("ui/size", { border = { thin = 1, default = 2 }, padding = { default = 5, small = 2 }, margin = { default = 5 }, span = { horizontal_default = 10 } })
 stub("ffi/blitbuffer", { COLOR_BLACK = "black", COLOR_WHITE = "white", COLOR_GRAY = "gray",
-    COLOR_DARK_GRAY = "darkgray", COLOR_LIGHT_GRAY = "lightgray", gray = function(v) return "gray" .. v end })
+    COLOR_DARK_GRAY = "darkgray", COLOR_LIGHT_GRAY = "lightgray", COLOR_GRAY_4 = "gray4" })
 stub("ui/gesturerange", { new = function(_, o) return o end })
 stub("libs/libkoreader-lfs", {
     attributes = function(p, key)
-        local f = io.open(p, "rb")
-        if not f then return nil end
-        local size = f:seek("end")
-        f:close()
-        local a = { size = size, modification = 1, mode = "file" }
+        local a
+        local probe = io.popen(string.format('test -d %q && echo d', p))
+        local is_dir = probe:read("*l") == "d"
+        probe:close()
+        if is_dir then
+            a = { mode = "directory", size = 0, modification = 1 }
+        else
+            local f = io.open(p, "rb")
+            if not f then return nil end
+            local size = f:seek("end")
+            f:close()
+            a = { size = size, modification = 1, mode = "file" }
+        end
         if key then return a[key] end
         return a
+    end,
+    dir = function(p)
+        local h = io.popen(string.format("ls -a %q", p))
+        local names = {}
+        for line in h:lines() do names[#names + 1] = line end
+        h:close()
+        local i = 0
+        return function() i = i + 1 return names[i] end
     end,
     mkdir = function(p) return os.execute('mkdir -p "' .. p .. '"') end,
 })
@@ -118,6 +137,42 @@ stub("ui/trapper", {
     clear = function() end,
 })
 stub("json", { decode = function() return {} end, encode = function() return "{}" end })
+stub("datetime", { secondsToHour = function(t) return os.date("%H:%M", t) end })
+stub("document/documentregistry", {
+    hasProvider = function(_, p) return p:match("%.epub$") or p:match("%.pdf$") or p:match("%.cbz$") end,
+    openDocument = function() return { getPageCount = function() return 42 end, close = function() end } end,
+})
+stub("ffi/archiver", { Reader = {
+    new = function(self) return setmetatable({}, { __index = self }) end,
+    open = function(self, path) self.path = path return io.open(path, "rb") ~= nil end,
+    extractToMemory = function(self, name)
+        local p = io.popen(string.format("unzip -p %q %q 2>/dev/null", self.path, name), "r")
+        local d = p:read("*a"); p:close()
+        return d ~= "" and d or nil
+    end,
+    close = function() end,
+} })
+S.opened = {}
+stub("apps/reader/readerui", { showReader = function(_, file) S.opened[#S.opened + 1] = file end })
+S.fm_calls = {}
+stub("apps/filemanager/filemanager", { instance = {
+    history = { onShowHist = function() S.fm_calls[#S.fm_calls + 1] = "history" end },
+    collections = { onShowColl = function() S.fm_calls[#S.fm_calls + 1] = "collections" end },
+    filesearcher = { onShowFileSearch = function() S.fm_calls[#S.fm_calls + 1] = "search" end },
+} })
+G_reader_settings = G_reader_settings or {
+    readSetting = function(_, k) if k == "home_dir" then return S.home_dir end end,
+    isTrue = function() return false end,
+    nilOrTrue = function() return true end,
+}
+
+--- A blitbuffer that records drawing calls.
+function S.fakeBB()
+    local calls = {}
+    return setmetatable({ calls = calls }, { __index = function(_, name)
+        return function(_self, ...) calls[#calls + 1] = { name, ... } end
+    end })
+end
 
 -- Real LuaSettings needs KOReader's dump helpers; a tiny in-memory one is enough here.
 local settings_by_path = {}
