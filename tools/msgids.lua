@@ -40,6 +40,11 @@ function Msgids.collect()
         for _, p in ipairs(group) do add(p.name) end
     end
     add("Book"); add("Publisher")
+    -- the tabs' titles, empty states and sort orders (sereno/shell/browse)
+    for _, v in ipairs({ "Library", "Reading", "Collections", "Search", "Favorites", "Title", "Author", "Recent",
+        "No books in this folder", "Books you open appear here", "This collection is empty",
+        "Long-press a book in KOReader's file browser to add it to a collection", "No books match",
+        "Search your library by title, author or file name" }) do add(v) end
     table.sort(list)
     return list
 end

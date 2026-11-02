@@ -225,6 +225,16 @@ for _, d in ipairs(DEVICES) do
                 metrics = function(path) return metrics[path] end,
                 stats = function() return { unread = 128, in_progress = 3, finished = 27 } end,
                 cover = cover,
+                home_dir = function() return books_dir or "." end,
+                list_dir = function()
+                    local files = {}
+                    for _, b in ipairs(SAMPLE) do files[#files + 1] = b.path end
+                    return { dirs = { { name = "Classics", path = (books_dir or ".") .. "/Classics", count = 12 },
+                        { name = "Poetry", path = (books_dir or ".") .. "/Poetry", count = 4 } }, files = files }
+                end,
+                collections = function() return { { name = "Favorites", count = 3 }, { name = "To read", count = 9 } } end,
+                collection = function() return { SAMPLE[1].path, SAMPLE[3].path } end,
+                search = function() return { SAMPLE[3].path } end,
             },
             options = { translate = _, page_method = "print", wpm = 230 },
         }
@@ -234,6 +244,26 @@ for _, d in ipairs(DEVICES) do
         writePGM(bb, pgm)
         print(string.format("%-14s %dx%d @%d dpi -> %s (%d nodes, body face %dpx)", d.id, d.width, d.height, d.dpi, pgm,
             #home.nodes, home:face("body").size))
+        -- the Library tab, then the quick controls pulled down over the home screen
+        home.tab = "library"
+        home:build()
+        home:paintTo(bb, 0, 0)
+        writePGM(bb, string.format("%s/%s-library.pgm", out_dir, d.id))
+        home.tab = "home"
+        home:build()
+        home:paintTo(bb, 0, 0)
+        local Painter = require("sereno/ui/painter")
+        local ControlsLayout = require("sereno/controls/layout")
+        local painter = Painter.new(home.theme)
+        local nodes = ControlsLayout.layout(home.theme, {
+            time = "9:41", battery = 82, wifi = true, night = false, has_frontlight = true, light_on = true,
+            brightness = 14, brightness_max = 24, has_warmth = true, warmth = 35, warmth_max = 100,
+        }, { wifi = _("Wi-Fi"), night = _("Night"), light = _("Light"), rotate = _("Rotate"), restart = _("Restart"),
+            sleep = _("Sleep"), wifi_on = _("Wi-Fi on"), wifi_off = _("Wi-Fi off"), brightness = _("Brightness: %d"),
+            warmth = _("Warmth: %d"), koreader_menu = _("KOReader menu"), files = _("File browser") })
+        painter:paint(bb, nodes)
+        painter:free()
+        writePGM(bb, string.format("%s/%s-controls.pgm", out_dir, d.id))
         home:onCloseWidget()
         if Font.cleanup then Font:cleanup() end
     end
@@ -267,7 +297,7 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
             local Device = makeDevice(d)
             package.loaded["device"] = Device
             for name in pairs(package.loaded) do
-                if name:match("^ui/") or name:match("^sereno/reader/panelwidget") or name:match("^sereno/ui") then
+                if name:match("^ui/") or name:match("^sereno/reader/panelwidget") or name:match("^sereno/ui") or name:match("^sereno/reader/panel$") then
                     package.loaded[name] = nil
                 end
             end
@@ -275,6 +305,9 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
             require("document/canvascontext"):init(Device)
             local Font = require("ui/font")
             local RenderText = require("ui/rendertext")
+            require("ui/renderimage").renderSVGImageFile = function(_self, filename, width, height)
+                return grayImage(filename, width or 64, height or 64, true)
+            end
             local PanelWidget = require("sereno/reader/panelwidget")
             local _ = require("sereno/l10n")
             local screen = { width = d.width, height = d.height, dpi = d.dpi }
@@ -287,6 +320,9 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                 { id = "koreader", align = "justify",
                   v = { font_size = 22, h_margin = 10, t_margin = 10, b_margin = 10, line_spacing = 100 } },
                 { id = "sereno", align = sereno.align,
+                  v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
+                        b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
+                { id = "bars", align = sereno.align, bars = true,
                   v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
                         b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
                 { id = "panel", align = sereno.align, panel = true,
@@ -318,6 +354,21 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                     blocks = blocks, chapter_opening = true,
                     footer = { left = string.format("1 / %d", total), right = "1%", y = d.height - footer_px, h = footer_px },
                 }
+                if c.bars then
+                    local Theme = require("sereno/ui/theme")
+                    local Painter = require("sereno/ui/painter")
+                    local ChromeLayout = require("sereno/reader/chrome")
+                    local theme = Theme.new{ width = d.width, height = d.height, dpi = d.dpi,
+                        scale_by_size = function(n) return Device.screen:scaleBySize(n) end }
+                    local painter = Painter.new(theme)
+                    local nodes = ChromeLayout.layout(theme, {
+                        title = "The Great Gatsby · F. Scott Fitzgerald", chapter = "I", page_label = "1",
+                        total_label = tostring(total), percent = 0.004, ticks = { 0, 0.11, 0.2, 0.34, 0.47, 0.58, 0.7, 0.79, 0.9 },
+                        can_prev = false, can_next = true,
+                    }, { home = _("Home"), page_of = _("Page %s of %s") })
+                    painter:paint(bb, nodes)
+                    painter:free()
+                end
                 if c.panel then
                     local panel = PanelWidget:new{ values = sereno, translate = _ }
                     panel:paintTo(bb, 0, 0)

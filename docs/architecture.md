@@ -24,6 +24,12 @@ sereno.koplugin/
     │   ├── service.lua        KOReader glue: libarchive, documents, Trapper, LuaSocket
     │   └── dialog.lua         "Pages & readability" dialog
     ├── ui/theme.lua           ✱ design system from physical units
+    ├── ui/painter.lua         draws nodes with KOReader's widgets (every Sereno screen)
+    ├── ui/overlay.lua         window for sheets over the screen (quick controls, reader bars)
+    ├── shell/browse.lua       ✱ Library / Reading / Collections / Search models
+    ├── shell/layout.lua       ✱ their grid of covers, title row, pager
+    ├── controls/layout.lua    ✱ quick controls sheet
+    ├── reader/chrome.lua      ✱ the reader's top and bottom bars
     ├── reader/
     │   ├── layout.lua         ✱ the page in pt/mm (size, spacing, margins, alignment, paragraphs) → KOReader settings and style tweaks
     │   ├── panel.lua          ✱ the Text & page panel as positioned nodes, and its miniature pages
@@ -46,6 +52,10 @@ sereno.koplugin/
 | Own menu | `ui.menu:registerToMainMenu` |
 | Long-press entry | `FileManager:addFileDialogButtons` |
 | Gestures | `Dispatcher:registerAction` (`sereno_show_home`, `sereno_page_panel`, `sereno_cycle_tier`, …) |
+| Reader bars and quick controls | `ui:registerTouchZones` with `overrides` of `readermenu_tap`, `readerconfigmenu_tap`, `readermenu_swipe` |
+| Quick control actions | `UIManager:broadcastEvent` of KOReader's events (`ToggleWifi`, `ToggleNightMode`, `IterateRotation`, `Restart`, `RequestSuspend`), `powerd:setIntensity` / `setWarmth` |
+| Reader navigation | `GotoPage`, `ReaderToc` chapters, `ReaderLink` location stack, `ReaderPageMap` labels |
+| Collections | `ReadCollection` |
 | Reader menu entry | `menu_items.sereno_page` with `sorting_hint = "typeset"`, next to KOReader's own font settings |
 | Page layout | `SetFontSize`, `SetLineSpace`, `SetPageMargins` events; `ReaderStyleTweak.global_tweaks` and `updateCssText`; `copt_*` and `style_tweaks` in `G_reader_settings` |
 | Home screen | A regular `InputContainer` shown with `UIManager:show` |
@@ -85,5 +95,6 @@ With `KORENDER_READER=1` it also sets the opening page of a book, KOReader's def
 | `theme_spec` | Physical sizing |
 | `home_spec` | Context, wording, and the layout on 7 screen sizes × 4 states |
 | `reader_spec` | Reading layouts: physical sizes, margins never under 5 mm, line-length cap, independent axes, style tweak ids that exist in KOReader |
+| `shell_spec` | Every tab, the quick controls and the reader's bars on 7 screens: nothing leaves the screen or overlaps, touch targets, paging |
 | `smoke_spec` | Loads `main.lua` against stubs of KOReader modules (`spec/koreader_stubs.lua`), walks every menu, shows the home screen, taps every target, opens the metrics dialog, counts a folder, drives the Text & page panel tap by tap and checks it fits six screens |
 | `l10n_spec` | Translations are complete and keep their placeholders |

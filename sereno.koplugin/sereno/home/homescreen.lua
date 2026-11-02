@@ -1,47 +1,45 @@
 --[[--
-The home screen widget: draws the nodes from sereno/home/layout with
-KOReader's text shaping, handles taps and holds, and keeps its clock line
-up to date through the refresh coordinator (one partial refresh a minute,
-paused while the device sleeps or the screen is covered).
+Sereno's full-screen shell: the home screen and the Library, Reading,
+Collections and Search tabs, all behind the same tab bar, so you never
+fall back into KOReader's file browser while moving around.
+
+Gestures:
+  tap           books open, folders and collections go in, tabs switch
+  hold          a book's pages & readability
+  swipe ← / →   next / previous page of a grid
+  swipe ↓ from the top, or a tap on the clock line: quick controls
+
+The clock line repaints once a minute through the refresh coordinator.
 ]]
 
+local Browse = require("sereno/shell/browse")
 local Context = require("sereno/home/context")
 local Layout = require("sereno/home/layout")
+local Painter = require("sereno/ui/painter")
 local Presenter = require("sereno/home/presenter")
+local ShellLayout = require("sereno/shell/layout")
 local Theme = require("sereno/ui/theme")
 
-local Blitbuffer = require("ffi/blitbuffer")
 local Device = require("device")
-local Font = require("ui/font")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
-local IconWidget = require("ui/widget/iconwidget")
-local ImageWidget = require("ui/widget/imagewidget")
 local InputContainer = require("ui/widget/container/inputcontainer")
-local TextBoxWidget = require("ui/widget/textboxwidget")
-local TextWidget = require("ui/widget/textwidget")
 local UIManager = require("ui/uimanager")
-local logger = require("logger")
 
 local Screen = Device.screen
-
-local INK = {
-    text = Blitbuffer.COLOR_BLACK,
-    secondary = Blitbuffer.COLOR_GRAY_4 or Blitbuffer.COLOR_DARK_GRAY,
-    hairline = Blitbuffer.COLOR_DARK_GRAY,
-    track = Blitbuffer.COLOR_LIGHT_GRAY or Blitbuffer.COLOR_GRAY,
-    paper = Blitbuffer.COLOR_WHITE,
-}
 
 local HomeScreen = InputContainer:extend{
     name = "sereno_home",
     covers_fullscreen = true, -- lets UIManager skip painting what's below
+    tab = "home",
     -- injected by main.lua
-    sources = nil,   -- { history, book_info, new_books, metrics, cover }
+    sources = nil,   -- { history, book_info, new_books, metrics, cover, stats,
+                     --   home_dir, list_dir, collections, collection, search }
     options = nil,   -- { page_method, wpm, translate, thousands }
     refresh = nil,   -- sereno/eink/refresh coordinator
-    on_action = nil, -- function(action) called for taps on books and nav items
+    on_action = nil, -- function(action, home) for what the shell doesn't handle itself
     on_hold = nil,   -- function(file) long-press on a book
+    on_controls = nil, -- function() open the quick controls
 }
 
 function HomeScreen:init()
@@ -50,25 +48,13 @@ function HomeScreen:init()
         width = self.dimen.w, height = self.dimen.h, dpi = Screen:getDPI(),
         scale_by_size = function(n) return Screen:scaleBySize(n) end,
     }
-    self.faces = {}
-    self.widgets = {}
-    -- measure with the real fonts, so the layout's boxes match what is drawn
-    self.theme.measure = function(text, style_name, width)
-        local w = TextBoxWidget:new{ text = text, face = self:face(style_name), width = width }
-        local n = #(w.vertical_string_list or {})
-        w:free()
-        return math.max(1, n)
-    end
-    self.theme.measure_width = function(text, style_name)
-        local w = TextWidget:new{ text = text, face = self:face(style_name), padding = 0 }
-        local width = w:getSize().w
-        w:free()
-        return width
-    end
+    self.painter = Painter.new(self.theme, self.sources and self.sources.cover)
+    self.states = { library = {}, history = {}, collections = {}, search = {} }
     if Device:isTouchDevice() then
         self.ges_events = {
             Tap = { GestureRange:new{ ges = "tap", range = self.dimen } },
             Hold = { GestureRange:new{ ges = "hold", range = self.dimen } },
+            Swipe = { GestureRange:new{ ges = "swipe", range = self.dimen } },
         }
     end
     if Device:hasKeys() then
@@ -77,15 +63,8 @@ function HomeScreen:init()
     self:build()
 end
 
-function HomeScreen:face(style_name)
-    local f = self.faces[style_name]
-    if not f then
-        local style = self.theme.type[style_name]
-        f = Font:getFace(style.font, self.theme:faceSize(style.size))
-        self.faces[style_name] = f
-    end
-    return f
-end
+--- Kept for callers that measure with the home screen's fonts.
+function HomeScreen:face(style_name) return self.painter:face(style_name) end
 
 function HomeScreen:statusCopy()
     local opts = self.options or {}
@@ -105,175 +84,116 @@ function HomeScreen:statusCopy()
 end
 
 function HomeScreen:build()
-    self:freeWidgets()
+    self.painter:reset()
     local status, opts = self:statusCopy()
-    self.model = Context.build(self.sources, {
-        page_method = opts.page_method, wpm = opts.wpm,
-        shelf_size = self.theme.columns >= 8 and 10 or 8,
-    })
-    local copy = Presenter.present(self.model, opts.translate or function(s) return s end, status, opts.thousands)
-    self.nodes = Layout.home(self.theme, self.model, copy)
-    self.widgets = {}
-    for i, node in ipairs(self.nodes) do
-        if node.id == "status_right" then self.status_index = i end
-    end
-end
-
-function HomeScreen:freeWidgets()
-    for _i, w in pairs(self.widgets or {}) do
-        if w.free then w:free() end
-    end
-    self.widgets = {}
-end
-
--- Text node -> widget, created lazily and cached until the next build.
-function HomeScreen:textWidget(i, node)
-    local w = self.widgets[i]
-    if w then return w end
-    local style = self.theme.type[node.style]
-    local face = self:face(node.style)
-    local color = INK[node.color] or INK.text
-    local single = (node.max_lines or 1) <= 1
-    local text = node.text
-    if not single then
-        -- TextBoxWidget breaks a word that is wider than the box in the middle
-        -- ("Frankenstei / n"); shorten such a word with an ellipsis instead
-        text = text:gsub("%S+", function(word)
-            if self.theme.measure_width(word, node.style) <= node.w then return word end
-            local cut = word
-            repeat
-                cut = cut:gsub("[%z\1-\127\192-\255][\128-\191]*$", "")
-            until cut == "" or self.theme.measure_width(cut .. "…", node.style) <= node.w
-            return cut .. "…"
-        end)
-    end
-    if single then
-        w = TextWidget:new{ text = node.text, face = face, max_width = node.w, fgcolor = color, padding = 0 }
+    local _ = opts.translate or function(s) return s end
+    if self.tab == "home" then
+        self.model = Context.build(self.sources, {
+            page_method = opts.page_method, wpm = opts.wpm,
+            shelf_size = self.theme.columns >= 8 and 10 or 8,
+        })
+        local copy = Presenter.present(self.model, _, status, opts.thousands)
+        self.nodes = Layout.home(self.theme, self.model, copy)
+        self.paging = nil
     else
-        w = TextBoxWidget:new{
-            text = text, face = face, width = node.w, height = node.h,
-            height_overflow_show_ellipsis = true, alignment = node.align or "left",
-            fgcolor = color, bgcolor = INK.paper,
-            line_height = math.max(0, style.line / face.size - 1),
-        }
+        local state = self.states[self.tab]
+        self.browse = Browse.build(self.tab, state, self.sources)
+        local copy = Presenter.browse(self.browse, _, status, opts.thousands)
+        self.nodes, self.paging = ShellLayout.browse(self.theme, self.browse, copy, state.page)
+        state.page = self.paging.page
     end
-    self.widgets[i] = w
-    return w
-end
-
-local function paintTypesetCover(self, bb, x, y, node)
-    local t = self.theme
-    bb:paintRect(x, y, node.w, node.h, INK.paper)
-    bb:paintBorder(x, y, node.w, node.h, t.hairline, INK.text)
-    local book = node.book or {}
-    local inset = math.floor(node.w * 0.1)
-    local title_px = math.max(8, math.floor(node.w / 7))
-    local title_face = Font:getFace(Theme.FONTS.serif, t:faceSize(title_px))
-    local title = TextBoxWidget:new{
-        text = Presenter.shortTitle(book.title or ""), face = title_face, width = node.w - 2 * inset,
-        height = math.floor(node.h * 0.5), height_overflow_show_ellipsis = true, alignment = "center",
-        fgcolor = INK.text, bgcolor = INK.paper,
-    }
-    local ty = y + math.floor(node.h * 0.2)
-    title:paintTo(bb, x + inset, ty)
-    local rule_y = ty + title:getSize().h + math.floor(title_px * 0.6)
-    title:free()
-    bb:paintRect(x + math.floor(node.w * 0.4), rule_y, math.floor(node.w * 0.2), t.hairline, INK.text)
-    local author = type(book.authors) == "table" and book.authors[1] or book.authors
-    if author and author ~= "" then
-        local a_face = Font:getFace(Theme.FONTS.sans, t:faceSize(math.max(6, math.floor(node.w / 13))))
-        local a = TextWidget:new{ text = author:upper(), face = a_face, max_width = node.w - 2 * inset, fgcolor = INK.text, padding = 0 }
-        local size = a:getSize()
-        a:paintTo(bb, x + math.floor((node.w - size.w) / 2), y + node.h - math.floor(node.h * 0.12) - size.h)
-        a:free()
+    self.status_index = nil
+    self.status_bottom = 0
+    for i, node in ipairs(self.nodes) do
+        if node.id == "status_right" then
+            self.status_index = i
+            self.status_bottom = node.y + node.h
+        end
     end
 end
 
-function HomeScreen:paintCover(bb, x, y, node)
-    local cover_bb = self.sources.cover and node.book and self.sources.cover(node.book.file)
-    if not cover_bb then
-        return paintTypesetCover(self, bb, x, y, node)
-    end
-    local img = ImageWidget:new{
-        image = cover_bb, image_disposable = false,
-        width = node.w, height = node.h, scale_factor = 0,
-    }
-    local size = img:getSize()
-    local ix = x + math.floor((node.w - size.w) / 2)
-    local iy = y + node.h - size.h -- covers sit on a common baseline, like books on a shelf
-    img:paintTo(bb, ix, iy)
-    bb:paintBorder(ix, iy, size.w, size.h, self.theme.hairline, INK.text)
-    img:free()
+--- Shows a tab ("home", "library", "history", "collections", "search").
+function HomeScreen:showTab(tab)
+    self.tab = tab
+    self:build()
+    UIManager:setDirty(self, "ui")
 end
 
 function HomeScreen:paintTo(bb, x, y)
     self.dimen.x, self.dimen.y = x, y
-    bb:paintRect(x, y, self.dimen.w, self.dimen.h, INK.paper)
-    for i, node in ipairs(self.nodes) do
-        local nx, ny = x + node.x, y + node.y
-        if node.kind == "text" then
-            local w = self:textWidget(i, node)
-            local size = w:getSize()
-            local dx = 0
-            if node.align == "center" then dx = math.floor((node.w - size.w) / 2)
-            elseif node.align == "right" then dx = node.w - size.w end
-            local dy = (node.max_lines or 1) <= 1 and math.floor((node.h - size.h) / 2) or 0
-            w:paintTo(bb, nx + dx, ny + dy)
-        elseif node.kind == "cover" then
-            local ok, err = pcall(self.paintCover, self, bb, nx, ny, node)
-            if not ok then logger.warn("Sereno: cover drawing failed", err) end
-        elseif node.kind == "box" then
-            local r = node.radius or 0
-            if node.fill then
-                if r > 0 then bb:paintRoundedRect(nx, ny, node.w, node.h, INK[node.fill], r)
-                else bb:paintRect(nx, ny, node.w, node.h, INK[node.fill]) end
-            end
-            if node.border then
-                bb:paintBorder(nx, ny, node.w, node.h, node.bw or self.theme.hairline, INK[node.border], r)
-            end
-        elseif node.kind == "icon" then
-            local w = self.widgets[i]
-            if not w then
-                -- inactive tabs are dimmed rather than drawn in a lighter grey
-                w = IconWidget:new{ icon = node.name, width = node.w, height = node.h, dim = node.color ~= "text" }
-                self.widgets[i] = w
-            end
-            w:paintTo(bb, nx, ny)
-        elseif node.kind == "rule" then
-            bb:paintRect(nx, ny, node.w, node.h, INK[node.color] or INK.text)
-        elseif node.kind == "bar" then
-            local r = math.floor(node.h / 2)
-            local filled = math.floor(node.w * math.min(1, node.fraction or 0))
-            if node.inset then
-                -- drawn over a cover: white track with an outline
-                bb:paintRoundedRect(nx, ny, node.w, node.h, INK.paper, r)
-                bb:paintBorder(nx, ny, node.w, node.h, 1, INK.text, r)
-            else
-                bb:paintRoundedRect(nx, ny, node.w, node.h, INK.track, r)
-            end
-            if filled > 0 then bb:paintRoundedRect(nx, ny, filled, node.h, INK.text, r) end
-        end
-    end
+    bb:paintRect(x, y, self.dimen.w, self.dimen.h, Painter.INK.paper)
+    self.painter:paint(bb, self.nodes, x, y)
 end
 
-local function hit(nodes, pos)
-    for i = #nodes, 1, -1 do
-        local n = nodes[i]
-        if n.kind == "tap" and pos.x >= n.x and pos.x < n.x + n.w and pos.y >= n.y and pos.y < n.y + n.h then
-            return n
+-- What the shell handles itself; returns true when done.
+function HomeScreen:handle(action)
+    local state = self.states[self.tab]
+    if action.type == "nav" then
+        if action.target == self.tab and self.tab ~= "home" then
+            -- tapping the current tab goes back to its top level
+            self.states[self.tab] = { sort = state.sort }
         end
+        self:showTab(action.target)
+        return true
+    elseif action.type == "folder" then
+        self.states.library.path, self.states.library.page = action.path, 1
+        self:showTab("library")
+        return true
+    elseif action.type == "collection" then
+        state.collection, state.page = action.name, 1
+        self:showTab("collections")
+        return true
+    elseif action.type == "collections_root" then
+        state.collection, state.page = nil, 1
+        self:showTab("collections")
+        return true
+    elseif action.type == "page" then
+        state.page = (state.page or 1) + action.delta
+        self:showTab(self.tab)
+        return true
+    elseif action.type == "sort" then
+        state.sort, state.page = Browse.nextSort(state.sort or "title"), 1
+        self:showTab(self.tab)
+        return true
     end
+    return false
+end
+
+--- Search tab: shows the results for `query`.
+function HomeScreen:setQuery(query)
+    self.states.search.query, self.states.search.page = query, 1
+    self:showTab("search")
 end
 
 function HomeScreen:onTap(_arg, ges)
-    local n = hit(self.nodes, ges.pos)
-    if n and self.on_action then self.on_action(n.action, self) end
+    local n = Painter.hit(self.nodes, ges.pos)
+    if n then
+        if not self:handle(n.action) and self.on_action then self.on_action(n.action, self) end
+        return true
+    end
+    -- the clock line at the top opens the quick controls
+    if ges.pos.y <= self.status_bottom + self.theme:space(2) and self.on_controls then
+        self.on_controls()
+    end
     return true
 end
 
 function HomeScreen:onHold(_arg, ges)
-    local n = hit(self.nodes, ges.pos)
+    local n = Painter.hit(self.nodes, ges.pos)
     if n and n.action and n.action.type == "open" and self.on_hold then self.on_hold(n.action.file, self) end
+    return true
+end
+
+function HomeScreen:onSwipe(_arg, ges)
+    local dir = ges.direction
+    if dir == "south" and ges.pos.y < self.theme.height * 0.15 then
+        if self.on_controls then self.on_controls() end
+        return true
+    end
+    if self.paging and self.paging.pages > 1 then
+        if dir == "west" and self.paging.page < self.paging.pages then return self:handle({ type = "page", delta = 1 }) end
+        if dir == "east" and self.paging.page > 1 then return self:handle({ type = "page", delta = -1 }) end
+    end
     return true
 end
 
@@ -291,26 +211,26 @@ end
 -- Clock line: registered with the shared coordinator as a periodic widget.
 function HomeScreen:onShow()
     if self.refresh and self.status_index then
-        local node = self.nodes[self.status_index]
         self.refresh:register(self, {
             window = self, policy = "periodic", period = 60,
             region = function()
-                local n = self.nodes[self.status_index]
-                return n and { x = n.x, y = n.y, w = n.w, h = n.h } or { x = node.x, y = node.y, w = node.w, h = node.h }
+                local n = self.status_index and self.nodes[self.status_index]
+                return n and { x = n.x, y = n.y, w = n.w, h = n.h } or { x = 0, y = 0, w = 1, h = 1 }
             end,
             visible = function() return UIManager:getTopmostVisibleWidget() == self end,
             update = function()
                 local status = self:statusCopy()
-                local n = self.nodes[self.status_index]
+                local n = self.status_index and self.nodes[self.status_index]
                 if n then
                     local text = status.time or ""
                     if status.battery then
                         text = text .. " · " .. status.battery .. "%" .. (status.charging and " +" or "")
                     end
                     n.text = text
-                    if self.widgets[self.status_index] then
-                        self.widgets[self.status_index]:free()
-                        self.widgets[self.status_index] = nil
+                    local w = self.painter.widgets[n]
+                    if w then
+                        w:free()
+                        self.painter.widgets[n] = nil
                     end
                 end
             end,
@@ -321,7 +241,7 @@ end
 
 function HomeScreen:onCloseWidget()
     if self.refresh then self.refresh:unregister(self) end
-    self:freeWidgets()
+    self.painter:free()
 end
 
 return HomeScreen

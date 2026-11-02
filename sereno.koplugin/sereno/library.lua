@@ -214,4 +214,108 @@ function Library.booksIn(dir, recursive)
     return out
 end
 
+--- The library's top folder: KOReader's home folder, or the device's.
+function Library.homeDir()
+    local home = G_reader_settings and G_reader_settings:readSetting("home_dir")
+    if home and lfs.attributes(home, "mode") == "directory" then return home end
+    local ok, Device = pcall(require, "device")
+    if ok and Device.home_dir and lfs.attributes(Device.home_dir, "mode") == "directory" then return Device.home_dir end
+    return "/"
+end
+
+--[[--
+One folder of the library: its sub-folders (with how many books sit
+directly in each) and its books.
+]]
+function Library.listDir(path)
+    local dirs, files = {}, {}
+    local ok, iter, state = pcall(lfs.dir, path)
+    if not ok then return { dirs = dirs, files = files } end
+    for name in iter, state do
+        if name:sub(1, 1) ~= "." and not name:match("%.sdr$") then
+            local full = path .. "/" .. name
+            local mode = lfs.attributes(full, "mode")
+            if mode == "directory" then
+                local count = 0
+                local ok2, it2, st2 = pcall(lfs.dir, full)
+                if ok2 then
+                    for n2 in it2, st2 do
+                        if n2:sub(1, 1) ~= "." and DocumentRegistry:hasProvider(full .. "/" .. n2) then count = count + 1 end
+                    end
+                end
+                dirs[#dirs + 1] = { name = name, path = full, count = count }
+            elseif mode == "file" and DocumentRegistry:hasProvider(full) then
+                files[#files + 1] = full
+            end
+        end
+    end
+    return { dirs = dirs, files = files }
+end
+
+local function readCollection()
+    local ok, ReadCollection = pcall(require, "readcollection")
+    if not ok or not ReadCollection then return nil end
+    if ReadCollection._read then pcall(ReadCollection._read, ReadCollection) end
+    return ReadCollection
+end
+
+--- KOReader's collections (Favorites first), with their sizes.
+function Library.collections()
+    local rc = readCollection()
+    local out = {}
+    if not (rc and rc.coll) then return out end
+    local default = rc.default_collection_name or "favorites"
+    for name, coll in pairs(rc.coll) do
+        local n = 0
+        for _k in pairs(coll) do n = n + 1 end
+        out[#out + 1] = { name = name, count = n, order = name == default and 0 or ((rc.coll_settings or {})[name] or {}).order or 1 }
+    end
+    table.sort(out, function(a, b)
+        if a.order ~= b.order then return a.order < b.order end
+        return a.name:lower() < b.name:lower()
+    end)
+    for _i, c in ipairs(out) do
+        if c.name == default then c.name = "Favorites" c.id = default else c.id = c.name end
+    end
+    return out
+end
+
+function Library.collection(name)
+    local rc = readCollection()
+    if not (rc and rc.coll) then return {} end
+    local id = name
+    if name == "Favorites" and not rc.coll[name] then id = rc.default_collection_name or "favorites" end
+    if not rc.coll[id] then return {} end
+    local files = {}
+    for _i, item in ipairs(rc:getOrderedCollection(id)) do
+        if exists(item.file) then files[#files + 1] = item.file end
+    end
+    return files
+end
+
+--[[--
+Books whose title, authors or file name contain every word of `query`.
+Uses CoverBrowser's metadata when it is there, else the file name.
+]]
+function Library.search(query, matches)
+    local out = {}
+    local bim = bookInfoManager()
+    for _i, file in ipairs(Library.booksIn(Library.homeDir(), true)) do
+        local title, authors
+        if bim then
+            local ok, bi = pcall(bim.getBookInfo, bim, file, false)
+            if ok and bi then title, authors = bi.title, bi.authors end
+        end
+        if matches(query, title, authors, file) then
+            out[#out + 1] = file
+            if #out >= 300 then break end
+        end
+    end
+    return out
+end
+
+function Library.mtime(file)
+    return lfs.attributes(file, "modification") or 0
+end
+
 return Library

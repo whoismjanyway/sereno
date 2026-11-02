@@ -48,8 +48,20 @@ stub("device", setmetatable({
     isTouchDevice = function() return true end, hasExitOptions = function() return true end,
     canRestart = function() return true end, hasFrontlight = function() return true end,
     hasKeys = function() return false end, model = "stub", hasBattery = function() return true end,
-    getPowerDevice = function() return { getCapacity = function() return 77 end, isCharging = function() return false end } end,
+    hasWifiToggle = function() return true end, canSuspend = function() return true end,
+    hasNaturalLight = function() return true end,
+    getPowerDevice = function() return S.powerd end,
 }, { __index = function() return function() return false end end }))
+S.powerd = {
+    fl_min = 0, fl_max = 24, intensity = 10, warmth = 40, on = true,
+    getCapacity = function() return 77 end, isCharging = function() return false end,
+    isFrontlightOn = function(self) return self.on end,
+    frontlightIntensity = function(self) return self.intensity end,
+    frontlightWarmth = function(self) return self.warmth end,
+    setIntensity = function(self, v) self.intensity = v end,
+    setWarmth = function(self, v) self.warmth = v end,
+    toggleFrontlight = function(self) self.on = not self.on end,
+}
 stub("datastorage", {
     getSettingsDir = function() return S.settings_dir end,
     getDataDir = function() return S.settings_dir end,
@@ -129,7 +141,19 @@ stub("docsettings", {
     open = function() return { readSetting = function() return nil end } end,
 })
 stub("ui/widget/booklist", { getBookInfo = function() return { been_opened = false } end })
-stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, isOnline = function() return true end })
+stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, isOnline = function() return true end,
+    isWifiOn = function() return true end })
+stub("readcollection", {
+    default_collection_name = "favorites",
+    coll = {}, coll_settings = {},
+    _read = function() end,
+    getOrderedCollection = function(self, name)
+        local out = {}
+        for file, item in pairs(self.coll[name] or {}) do out[#out + 1] = { file = file, order = item.order or 1 } end
+        table.sort(out, function(a, b) return a.order < b.order end)
+        return out
+    end,
+})
 stub("ui/trapper", {
     wrap = function(_, fn) return fn() end,
     info = function() return true end,

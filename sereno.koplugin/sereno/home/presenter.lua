@@ -40,6 +40,66 @@ local function fill(template, ...)
 end
 
 --[[--
+What every Sereno screen shows around its content: the date, the clock
+and battery, and the tab bar with `active` marked.
+]]
+function Presenter.frame(_, status, active, d)
+    status = status or {}
+    d = d or os.date("*t")
+    local copy = {
+        status_left = fill(_("%1, %2 %3"), _(DAYS[d.wday]), d.day, _(MONTHS[d.month])),
+        status_right = status.time or "",
+        date = fill(_("%1, %2 %3"), _(DAYS[d.wday]), d.day, _(MONTHS[d.month])),
+        -- icons are KOReader's own (resources/icons/mdlight)
+        nav = {
+            { id = "home", label = _("Home"), icon = "home" },
+            { id = "library", label = _("Library"), icon = "appbar.filebrowser" },
+            { id = "history", label = _("Reading"), icon = "book.opened" },
+            { id = "collections", label = _("Collections"), icon = "star.empty" },
+            { id = "search", label = _("Search"), icon = "appbar.search" },
+        },
+    }
+    for _i, item in ipairs(copy.nav) do item.active = item.id == active end
+    if status.battery then
+        local battery = tostring(status.battery) .. "%" .. (status.charging and " +" or "")
+        copy.status_right = copy.status_right ~= "" and (copy.status_right .. " · " .. battery) or battery
+    end
+    return copy
+end
+
+--[[--
+The words for a Library / Reading / Collections / Search model
+(sereno/shell/browse).
+]]
+function Presenter.browse(model, _, status, sep)
+    sep = sep or ","
+    local copy = Presenter.frame(_, status, model.tab)
+    local fixed = { Library = true, Reading = true, Collections = true, Search = true }
+    copy.title = fixed[model.title] and _(model.title) or model.title
+    local parts = {}
+    if model.subtitle_folders and model.subtitle_folders > 0 then
+        parts[#parts + 1] = fill(_("%1 folders"), thousands(model.subtitle_folders, sep))
+    end
+    if model.subtitle_count and (model.subtitle_count > 0 or #parts == 0) then
+        parts[#parts + 1] = fill(_("%1 books"), thousands(model.subtitle_count, sep))
+    end
+    if model.subtitle_collections then
+        parts[#parts + 1] = fill(_("%1 collections"), thousands(model.subtitle_collections, sep))
+    end
+    copy.subtitle = table.concat(parts, " · ")
+    if model.sortable or (model.searchable and model.query and model.query ~= "") then
+        copy.sort_label = _(({ title = "Title", author = "Author", recent = "Recent" })[model.sort] or "Title")
+    end
+    copy.query = model.query
+    copy.search_placeholder = _("Title, author or file name")
+    copy.empty = model.empty and _(model.empty) or ""
+    copy.finished = _("Finished")
+    copy.count_books = _("%d books")
+    copy.page_of = _("%d of %d")
+    return copy
+end
+
+--[[--
 @tparam table model  Context.build() result (modified in place)
 @tparam function _   translation function
 @tparam table status { time = "07:48", battery = 82 (optional), charging = bool }
@@ -52,28 +112,14 @@ function Presenter.present(model, _, status, sep)
     local duration_words = { h = _("h"), min = _("min"), less = _("under a minute") }
 
     local d = model.date or os.date("*t")
-    local copy = {
-        status_left = fill(_("%1, %2 %3"), _(DAYS[d.wday]), d.day, _(MONTHS[d.month])),
-        status_right = status.time or "",
+    local copy = Presenter.frame(_, status, "home", d)
+    for k, v in pairs({
         greeting = ({ night = _("Good night"), morning = _("Good morning"),
             afternoon = _("Good afternoon"), evening = _("Good evening") })[model.part_of_day or "evening"],
-        date = fill(_("%1, %2 %3"), _(DAYS[d.wday]), d.day, _(MONTHS[d.month])),
         see_all = _("See all"),
-        -- icons are KOReader's own (resources/icons/mdlight)
-        nav = {
-            { id = "home", label = _("Home"), icon = "home", active = true },
-            { id = "library", label = _("Library"), icon = "appbar.filebrowser" },
-            { id = "history", label = _("History"), icon = "book.opened" },
-            { id = "collections", label = _("Collections"), icon = "star.empty" },
-            { id = "search", label = _("Search"), icon = "appbar.search" },
-        },
         empty_title = _("Your library is empty"),
         empty_body = _("Copy some books to your reader, then open the Library to find them."),
-    }
-    if status.battery then
-        local battery = tostring(status.battery) .. "%" .. (status.charging and " +" or "")
-        copy.status_right = copy.status_right ~= "" and (copy.status_right .. " · " .. battery) or battery
-    end
+    }) do copy[k] = v end
 
     if model.state == "reading" then
         copy.hero_label = _("Continue reading")

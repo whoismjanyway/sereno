@@ -93,6 +93,9 @@ end
 test("the home screen builds, paints and counts missing books", function()
     local dir = setupLibrary()
     local p = Sereno:new{ ui = newUI("filemanager") }
+    -- the home screen now opens at start-up by default
+    S.runScheduled()
+    eq(S.shown[#S.shown].name, "sereno_home", "home at start-up")
     p:showHome()
     local home = S.shown[#S.shown]
     eq(home.name, "sereno_home")
@@ -104,7 +107,7 @@ test("the home screen builds, paints and counts missing books", function()
     home:paintTo(bb, 0, 0)
     truthy(#bb.calls > 5, "drew something")
     -- background counting fills the metrics cache, then the screen updates
-    for _i = 1, 10 do S.runScheduled() end
+    for _i = 1, 40 do S.runScheduled() end
     local Service = require("sereno/metrics/service")
     truthy(Service.peek(dir .. "/novel.epub"), "hero counted")
     truthy(home.model.hero.page_total and home.model.hero.page_total > 0, "page count shown after update")
@@ -112,19 +115,91 @@ test("the home screen builds, paints and counts missing books", function()
     eq(home.model.hero.title, "Cien años de prueba: una novela", "title read from the book itself")
 end)
 
-test("taps open books and navigate", function()
+test("taps open books, and the tabs stay in Sereno", function()
+    local dir = setupLibrary()
     local p = Sereno:new{ ui = newUI("filemanager") }
     p:showHome()
     local home = S.shown[#S.shown]
-    local tapped = {}
-    for _i, n in ipairs(home.nodes) do
-        if n.kind == "tap" and not tapped[n.action.type .. (n.action.target or "")] then
-            tapped[n.action.type .. (n.action.target or "")] = true
-            home:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } })
+    local function tapWhere(pred)
+        for _i, n in ipairs(home.nodes) do
+            if n.kind == "tap" and pred(n.action) then
+                home:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } })
+                return n
+            end
         end
     end
+    -- every tab is a Sereno screen: KOReader's file manager is never asked
+    for _i, tab in ipairs({ "library", "history", "collections", "search", "home" }) do
+        truthy(tapWhere(function(a) return a.type == "nav" and a.target == tab end), "tab " .. tab)
+        eq(home.tab, tab)
+        eq(S.shown[#S.shown], home, "still the same Sereno window")
+        local bb = S.fakeBB()
+        home:paintTo(bb, 0, 0)
+        truthy(#bb.calls > 2, tab .. " drew something")
+    end
+    eq(#S.fm_calls, 0, "no detour through KOReader's file manager")
+    -- the library lists the books folder, opens books, sorts
+    home:showTab("library")
+    eq(home.browse.path, dir)
+    truthy(#home.browse.items >= 3, "books in the library: " .. #home.browse.items)
+    truthy(tapWhere(function(a) return a.type == "sort" end), "sort pill")
+    eq(home.states.library.sort, "author")
+    truthy(tapWhere(function(a) return a.type == "open" end), "a book")
     truthy(#S.opened >= 1, "a book was opened")
-    truthy(H.contains(S.fm_calls, "history") and H.contains(S.fm_calls, "search"), "navigation reached the file manager")
+end)
+
+test("the library goes into folders and back, and pages with swipes", function()
+    local dir = setupLibrary()
+    os.execute(string.format("mkdir -p %q/sub && for i in $(seq 1 30); do cp spec/fixtures/sample.epub %q/sub/b$i.epub; done", dir, dir))
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    local home = p:showHome("library")
+    local folder
+    for _i, it in ipairs(home.browse.items) do if it.kind == "folder" then folder = it end end
+    truthy(folder and folder.count == 30, "folder tile with its count")
+    home:handle({ type = "folder", path = folder.path })
+    eq(home.browse.title, "sub")
+    truthy(home.browse.back, "a way back up")
+    truthy(home.paging.pages > 1, "30 books take more than one page")
+    home:onSwipe(nil, { direction = "west", pos = { x = 100, y = 400 } })
+    eq(home.paging.page, 2)
+    home:onSwipe(nil, { direction = "east", pos = { x = 100, y = 400 } })
+    eq(home.paging.page, 1)
+    home:handle(home.browse.back)
+    eq(home.browse.path, dir)
+    os.execute(string.format("rm -rf %q/sub", dir))
+end)
+
+test("search finds books by file name", function()
+    setupLibrary()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    local home = p:showHome("search")
+    home:setQuery("novel")
+    eq(#home.browse.items, 1)
+    home:setQuery("nothing-like-this")
+    eq(#home.browse.items, 0)
+end)
+
+test("a swipe down from the top opens the quick controls", function()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    local home = p:showHome()
+    home:onSwipe(nil, { direction = "south", pos = { x = 100, y = 5 } })
+    local controls = S.shown[#S.shown]
+    eq(controls.name, "sereno_overlay")
+    local bb = S.fakeBB()
+    controls:paintTo(bb, 0, 0)
+    truthy(#bb.calls > 10, "controls drew")
+    local ids = {}
+    for _i, n in ipairs(controls.nodes) do if n.kind == "tap" then ids[#ids + 1] = n.action.type .. ":" .. tostring(n.action.id) end end
+    local all = table.concat(ids, " ")
+    truthy(all:find("toggle:night", 1, true) and all:find("toggle:sleep", 1, true), all)
+    -- night mode is a KOReader event, broadcast to every window
+    for _i, n in ipairs(controls.nodes) do
+        if n.kind == "tap" and n.action.id == "night" then controls:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } }) end
+    end
+    truthy(H.contains(S.events, "ToggleNightMode"), "night mode toggled")
+    -- a tap below the sheet closes it
+    controls:onTap(nil, { pos = { x = 10, y = 1440 } })
+    eq(S.closed[#S.closed], controls)
 end)
 
 test("long-press and file dialog show the metrics dialog", function()
@@ -306,6 +381,99 @@ test("PDFs are left alone", function()
     local p = Sereno:new{ ui = ui }
     local values = require("sereno/reader/layout").compute({ width = 1072, height = 1448, dpi = 300 }, "paperback")
     eq(p:applyReadingLayout(values), false)
+end)
+
+H.describe("plugin smoke test: reader bars")
+
+local function readerUI()
+    local ui = newUI("reader")
+    ui.rolling = {}
+    local zones
+    ui.registerTouchZones = function(_self, z) zones = z end
+    local page = 40
+    ui.document = {
+        file = "/books/x.epub",
+        getProps = function() return { title = "The Great Gatsby", authors = "F. Scott Fitzgerald" } end,
+        getCurrentPage = function() return page end,
+        getPageCount = function() return 200 end,
+    }
+    ui.toc = {
+        getTocTitleByPage = function() return "Chapter III" end,
+        getTocTicksFlattened = function() return { 1, 30, 60, 90 } end,
+        getPreviousChapter = function(_self, p) return p > 30 and 30 or 1 end,
+        getNextChapter = function(_self, p) return p < 60 and 60 or nil end,
+        onShowToc = function() S.events[#S.events + 1] = "ShowToc" end,
+    }
+    ui.link = { addCurrentLocationToStack = function() end, onGoBackLink = function() page = 40 end }
+    ui.handleEvent = function(_self, e)
+        S.events[#S.events + 1] = e.name
+        if e.name == "GotoPage" then page = e.args[1] end
+    end
+    ui.onClose = function() S.events[#S.events + 1] = "CloseReader" end
+    return ui, function() return zones end, function() return page end
+end
+
+test("taps at the top or bottom show Sereno's bars instead of KOReader's menus", function()
+    local ui, zones, page = readerUI()
+    local p = Sereno:new{ ui = ui }
+    local z = zones()
+    truthy(z and #z == 3, "touch zones registered")
+    local by_id = {}
+    for _i, zone in ipairs(z) do by_id[zone.id] = zone end
+    truthy(H.contains(by_id.sereno_top_tap.overrides, "readermenu_tap"), "placed before KOReader's top menu")
+    truthy(H.contains(by_id.sereno_bottom_tap.overrides, "readerconfigmenu_tap"), "and its bottom menu")
+    truthy(by_id.sereno_top_tap.handler({}), "handled")
+    local chrome = S.shown[#S.shown]
+    eq(chrome.name, "sereno_overlay")
+    local bb = S.fakeBB()
+    chrome:paintTo(bb, 0, 0)
+    local texts = {}
+    for _i, n in ipairs(chrome.nodes) do if n.kind == "text" then texts[#texts + 1] = n.text end end
+    local all = table.concat(texts, " | ")
+    truthy(all:find("Chapter III", 1, true) and all:find("Page 40 of 200", 1, true), all)
+    local function tap(pred)
+        for _i, n in ipairs(chrome.nodes) do
+            if n.kind == "tap" and pred(n.action) then
+                chrome:onTap(nil, { pos = { x = n.x + math.floor(n.w * 0.75), y = n.y + 1 } })
+                return n
+            end
+        end
+    end
+    -- next chapter, then the way back
+    tap(function(a) return a.type == "next_chapter" end)
+    eq(page(), 60)
+    local back = false
+    for _i, n in ipairs(chrome.nodes) do if n.id == "back_label" then back = n.text end end
+    eq(back, "Back to page 40")
+    tap(function(a) return a.type == "back" end)
+    eq(page(), 40)
+    -- a tap on the slider at 3/4 goes three quarters into the book
+    tap(function(a) return a.type == "seek" end)
+    truthy(page() > 140 and page() < 160, "slider jump: " .. page())
+    -- tools close the bars and open KOReader's own screens
+    tap(function(a) return a.type == "toc" end)
+    S.runScheduled()
+    truthy(H.contains(S.events, "ShowToc"), "contents")
+    -- a swipe down from the top edge: quick controls
+    truthy(by_id.sereno_top_swipe.handler({ direction = "south" }), "swipe down")
+    eq(S.shown[#S.shown].name, "sereno_overlay")
+    eq(by_id.sereno_top_swipe.handler({ direction = "west" }), nil, "other swipes go to KOReader")
+    -- with the setting off, KOReader's menus come back
+    p.settings:saveSetting("reader_bars", false)
+    eq(by_id.sereno_top_tap.handler({}), nil)
+    p.settings:saveSetting("reader_bars", true)
+end)
+
+test("Home in the bars closes the book", function()
+    local ui, zones = readerUI()
+    Sereno:new{ ui = ui }
+    zones()[1].handler({})
+    local chrome = S.shown[#S.shown]
+    for _i, n in ipairs(chrome.nodes) do
+        if n.kind == "tap" and n.action.type == "home" then chrome:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } }) end
+    end
+    S.runScheduled()
+    truthy(H.contains(S.events, "CloseReader"), "book closed")
 end)
 
 H.describe("plugin smoke test: undo")

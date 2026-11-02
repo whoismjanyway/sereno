@@ -356,6 +356,13 @@ local function navBar(nodes, t, copy, bottom)
     return y
 end
 
+Layout.text = text
+Layout.header = header
+Layout.navBar = navBar
+Layout.navHeight = navHeight
+Layout.coverWithShadow = coverWithShadow
+Layout.radius = radius
+
 --[[--
 @tparam table t     Theme
 @tparam table model Context.build() result, with display strings filled in by Presenter.present

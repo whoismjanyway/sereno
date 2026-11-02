@@ -120,4 +120,15 @@ pw = os.path.join(src, "reader-paperwhite-sereno.png")
 if os.path.exists(pw):
     framed(pw, "Sereno Paperback on a Kindle Paperwhite", info("paperwhite", "sereno")).save(
         os.path.join(dst, "reader-paperwhite.png"), optimize=True)
+# the whole shell on each device: home, library, quick controls, the reader's bars
+for dev, name, _dpi in DEVICES:
+    shots = [(f"{dev}.png", "Home"), (f"{dev}-library.png", "Library"), (f"{dev}-controls.png", "Quick controls"),
+             (f"reader-{dev}-bars.png", "In a book")]
+    tiles = [framed(os.path.join(src, f), label, name) for f, label in shots if os.path.exists(os.path.join(src, f))]
+    if len(tiles) == len(shots):
+        r = row(tiles)
+        out = Image.new("RGB", (r.width + 100, r.height + 100), BG)
+        out.paste(r, (50, 50))
+        out.save(os.path.join(dst, f"shell-{dev}.png"), optimize=True)
+
 print("composed into", dst)

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 (2026-11-02)
+
+### Added
+- **A complete shell:** the tab bar's Library, Reading, Collections and Search open Sereno screens instead of KOReader's file browser. The Library shows folders as tiles and books as covers, with a page of covers per screen (swipe to turn) and sorting by title, author or date. Reading lists books in progress first. Collections show KOReader's collections and Favorites. Search looks through titles, authors and file names.
+- **Quick controls:** swipe down from the top edge (home, library or book) for Wi-Fi, night mode, the light, rotation, restart and sleep, brightness and warmth sliders, and buttons to KOReader's menu and file browser.
+- **Bars in the book:** a tap at the top or bottom of a page shows a toolbar (Home, Text & page, contents, bookmarks, search, KOReader's menu) and a bottom bar with the chapter, the page in Sereno's numbers, a progress slider with chapter marks, chapter skips and *Back to page …* after a jump. Registered as touch zones before KOReader's own menu zones; one setting turns it off.
+- **Shared painter** (`sereno/ui/painter.lua`) for every Sereno screen, with drawn symbols for what KOReader's icon set lacks.
+
+### Changed
+- The home screen now opens at start-up by default.
+- The *History* tab is now *Reading*.
+- Background counting redraws the home screen reliably, even when a cover lookup counted a book first.
+
 ## 0.2.0 (2026-11-02)
 
 ### Added

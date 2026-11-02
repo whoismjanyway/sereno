@@ -26,6 +26,10 @@ local MetricsDialog = require("sereno/metrics/dialog")
 local MetricsService = require("sereno/metrics/service")
 local ReaderLayout = require("sereno/reader/layout")
 local PanelWidget = require("sereno/reader/panelwidget")
+local Browse = require("sereno/shell/browse")
+local ChromeLayout = require("sereno/reader/chrome")
+local ControlsLayout = require("sereno/controls/layout")
+local Overlay = require("sereno/ui/overlay")
 local MetricsCache = require("sereno/metrics/cache")
 
 local DataStorage = require("datastorage")
@@ -98,11 +102,15 @@ function Sereno:init()
         -- Menus are built lazily on first open, so writing now is in time.
         self:applyTiers(false)
     end
-    if not self.ui.document then
+    if self.ui.document then
+        self:registerReaderZones()
+    else
         self:addFileDialogButtons()
         -- Home at start-up, or after closing a book
-        local at_boot = not session.home_shown_at_boot and self.settings:isTrue("home_at_start")
+        local at_boot = not session.home_shown_at_boot and self.settings:nilOrTrue("home_at_start")
         local after_reader = session.home_after_reader and self.settings:nilOrTrue("home_after_reader")
+            and not session.skip_home_once
+        session.skip_home_once = nil
         session.home_shown_at_boot = true
         session.home_after_reader = false
         if at_boot or after_reader then
@@ -207,6 +215,9 @@ function Sereno:onDispatcherRegisterActions()
     Dispatcher:registerAction("sereno_show_home", {
         category = "none", event = "SerenoShowHome", title = _("Sereno: home screen"), general = true,
     })
+    Dispatcher:registerAction("sereno_controls", {
+        category = "none", event = "SerenoShowControls", title = _("Sereno: quick controls"), general = true,
+    })
     Dispatcher:registerAction("sereno_page_panel", {
         category = "none", event = "SerenoShowPagePanel", title = _("Sereno: text & page panel"), reader = true,
     })
@@ -253,28 +264,41 @@ function Sereno:homeSources()
     local peek = MetricsService.peek
     return {
         history = Library.history,
-        book_info = function(file) return Library.bookInfo(file, peek(file)) end,
+        book_info = function(file)
+            local info = Library.bookInfo(file, peek(file))
+            if info then info.mtime = Library.mtime(file) end
+            return info
+        end,
         new_books = Library.newBooks,
         metrics = peek,
         stats = Library.stats,
         cover = function(file) return Library.cover(file, peek(file)) end,
+        home_dir = Library.homeDir,
+        list_dir = Library.listDir,
+        collections = Library.collections,
+        collection = Library.collection,
+        search = function(query) return Library.search(query, Browse.matches) end,
     }
 end
 
-function Sereno:showHome()
+--- The Sereno shell, on `tab` (home by default).
+function Sereno:showHome(tab)
     if session.home then UIManager:close(session.home) end
     Library.invalidate()
     local home
     home = HomeScreen:new{
+        tab = tab or "home",
         sources = self:homeSources(),
         options = self:homeOptions(),
         refresh = getRefresh(),
         on_action = function(action) self:onHomeAction(action, home) end,
         on_hold = function(file) self:showMetrics(file, home) end,
+        on_controls = function() self:showControls() end,
     }
     session.home = home
     UIManager:show(home)
     self:countMissing(home)
+    return home
 end
 
 --[[--
@@ -283,21 +307,27 @@ metrics yet, then redraws once. Runs while the user looks at the screen,
 so opening a book is never slowed down.
 ]]
 function Sereno:countMissing(home)
-    local queue = {}
+    local queue, missing = {}, {}
     local model = home.model or {}
-    if model.hero then queue[#queue + 1] = model.hero.file end
-    for _i, b in ipairs(model.shelf or {}) do queue[#queue + 1] = b.file end
-    local changed = false
+    local function want(file)
+        if file and not MetricsService.peek(file) then
+            queue[#queue + 1] = file
+            missing[#missing + 1] = file
+        end
+    end
+    if model.hero then want(model.hero.file) end
+    for _i, b in ipairs(model.shelf or {}) do want(b.file) end
     local function step()
         if session.home ~= home then return end
         local file = table.remove(queue, 1)
         if not file then
-            if changed then home:update() end
+            -- redraw once if any of them got counted (here, or by a cover lookup meanwhile)
+            for _i, f in ipairs(missing) do
+                if MetricsService.peek(f) then home:update() return end
+            end
             return
         end
-        if not MetricsService.peek(file) then
-            if MetricsService.get(file) then changed = true end
-        end
+        if not MetricsService.peek(file) then MetricsService.get(file) end
         UIManager:scheduleIn(0.05, step)
     end
     UIManager:scheduleIn(0.5, step)
@@ -310,40 +340,37 @@ function Sereno:closeHome()
     end
 end
 
+function Sereno:openBook(file)
+    self:closeHome()
+    if self.ui.document then
+        if file ~= self.ui.document.file then self.ui:switchDocument(file) end
+    else
+        require("apps/reader/readerui"):showReader(file)
+    end
+end
+
 function Sereno:onHomeAction(action, home)
     if not action then return end
     if action.type == "open" then
-        self:closeHome()
-        if self.ui.document then
-            if action.file ~= self.ui.document.file then self.ui:switchDocument(action.file) end
-        else
-            require("apps/reader/readerui"):showReader(action.file)
-        end
-        return
-    end
-    local target = action.target
-    if target == "home" then
-        -- already here: just refresh the data
-        if home then home:update() end
-        return
-    end
-    -- navigation targets live in the file manager
-    self:closeHome()
-    local function go()
-        local FileManager = require("apps/filemanager/filemanager")
-        local fm = FileManager.instance
-        if not fm then return end
-        if target == "history" and fm.history then fm.history:onShowHist()
-        elseif target == "collections" and fm.collections then fm.collections:onShowColl()
-        elseif target == "search" and fm.filesearcher then fm.filesearcher:onShowFileSearch() end
-    end
-    if self.ui.document then
-        -- leave the book first; the file manager comes back by itself
-        session.home_after_reader = false
-        self.ui:onClose()
-        UIManager:nextTick(go)
-    else
-        go()
+        return self:openBook(action.file)
+    elseif action.type == "search_input" then
+        local InputDialog = require("ui/widget/inputdialog")
+        local dialog
+        dialog = InputDialog:new{
+            title = _("Search your library"),
+            input = home and home.states.search.query or "",
+            input_hint = _("Title, author or file name"),
+            buttons = { {
+                { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+                { text = _("Search"), is_enter_default = true, callback = function()
+                    local q = dialog:getInputText()
+                    UIManager:close(dialog)
+                    if home then home:setQuery(q) end
+                end },
+            } },
+        }
+        UIManager:show(dialog)
+        dialog:onShowKeyboard()
     end
 end
 
@@ -354,6 +381,276 @@ end
 
 function Sereno:onSerenoShowHome()
     self:showHome()
+    return true
+end
+
+--- Quick controls (pulled down from the top edge)
+
+function Sereno:controlsState()
+    local state = {}
+    local ok_dt, datetime = pcall(require, "datetime")
+    state.time = ok_dt and datetime.secondsToHour and datetime.secondsToHour(os.time(), G_reader_settings:isTrue("twelve_hour_clock"))
+        or os.date("%H:%M")
+    local powerd = Device:getPowerDevice()
+    if Device:hasBattery() then
+        state.battery, state.charging = powerd:getCapacity(), powerd:isCharging()
+    end
+    if Device:hasWifiToggle() then
+        local ok, NetworkMgr = pcall(require, "ui/network/manager")
+        state.wifi = ok and NetworkMgr:isWifiOn() or false
+    end
+    state.night = G_reader_settings:isTrue("night_mode")
+    state.has_frontlight = Device:hasFrontlight()
+    if state.has_frontlight then
+        state.light_on = powerd:isFrontlightOn()
+        state.brightness = powerd:frontlightIntensity()
+        state.brightness_min, state.brightness_max = powerd.fl_min or 0, powerd.fl_max or 100
+        state.has_warmth = Device:hasNaturalLight()
+        if state.has_warmth then
+            state.warmth, state.warmth_max = powerd:frontlightWarmth(), 100
+        end
+    end
+    state.can_restart = Device:canRestart()
+    state.can_sleep = Device:canSuspend()
+    return state
+end
+
+function Sereno:controlsCopy()
+    return {
+        wifi = _("Wi-Fi"), night = _("Night"), light = _("Light"), rotate = _("Rotate"),
+        restart = _("Restart"), sleep = _("Sleep"),
+        wifi_on = _("Wi-Fi on"), wifi_off = _("Wi-Fi off"),
+        brightness = _("Brightness: %d"), warmth = _("Warmth: %d"),
+        koreader_menu = _("KOReader menu"), files = _("File browser"),
+    }
+end
+
+--- Runs a quick control; returns true when the sheet should be redrawn.
+function Sereno:onControlsAction(action, ges, overlay)
+    local powerd = Device:getPowerDevice()
+    local function later(fn)
+        overlay:onClose()
+        UIManager:nextTick(fn)
+    end
+    if action.type == "toggle" then
+        local id = action.id
+        if id == "wifi" then
+            UIManager:broadcastEvent(Event:new("ToggleWifi"))
+            -- the network state settles a moment later
+            UIManager:scheduleIn(2, function()
+                if session.controls == overlay then overlay:rebuild() overlay:refresh() end
+            end)
+            return true
+        elseif id == "night" then
+            UIManager:broadcastEvent(Event:new("ToggleNightMode"))
+            return true
+        elseif id == "light" then
+            powerd:toggleFrontlight()
+            return true
+        elseif id == "rotate" then
+            later(function() UIManager:broadcastEvent(Event:new("IterateRotation")) end)
+        elseif id == "restart" then
+            later(function() UIManager:broadcastEvent(Event:new("Restart")) end)
+        elseif id == "sleep" then
+            later(function() UIManager:broadcastEvent(Event:new("RequestSuspend")) end)
+        end
+        return false
+    elseif action.type == "seek" or action.type == "step" then
+        local value
+        if action.type == "seek" then
+            value = ControlsLayout.seekValue(action, ges.pos.x)
+        else
+            local cur = action.id == "warmth" and powerd:frontlightWarmth() or powerd:frontlightIntensity()
+            local max = action.id == "warmth" and 100 or (powerd.fl_max or 100)
+            value = cur + action.delta * math.max(1, math.floor(max / 20))
+            -- holding minus isn't a tap; a tap on minus at the bottom goes to zero
+            value = math.max(action.id == "warmth" and 0 or (powerd.fl_min or 0), math.min(max, value))
+        end
+        if action.id == "warmth" then powerd:setWarmth(value) else powerd:setIntensity(value) end
+        return true
+    elseif action.type == "koreader_menu" then
+        later(function()
+            if self.ui.menu and self.ui.menu.onShowMenu then self.ui.menu:onShowMenu() end
+        end)
+    elseif action.type == "files" then
+        -- KOReader's own file browser, without Sereno's home on top
+        later(function()
+            self:closeHome()
+            if self.ui.document then
+                session.skip_home_once = true
+                self.ui:onClose()
+            end
+        end)
+    end
+    return false
+end
+
+function Sereno:showControls()
+    if session.controls then return session.controls end
+    local overlay
+    overlay = Overlay:new{
+        build_nodes = function(theme)
+            local nodes, bottom = ControlsLayout.layout(theme, self:controlsState(), self:controlsCopy())
+            return nodes, { { x = 0, y = 0, w = theme.width, h = bottom } }
+        end,
+        on_action = function(action, ges, ov) return self:onControlsAction(action, ges, ov) end,
+        on_close = function() session.controls = nil end,
+        close_on_swipe = "north",
+    }
+    session.controls = overlay
+    UIManager:show(overlay)
+    return overlay
+end
+
+function Sereno:onSerenoShowControls()
+    self:showControls()
+    return true
+end
+
+--- The reader's bars (instead of KOReader's top and bottom menus)
+
+--[[--
+Taps at the top or bottom of a page show Sereno's bars, and a swipe down
+from the top edge the quick controls. These are touch zones registered on
+the reader with KOReader's public `registerTouchZones`, placed before
+KOReader's own menu zones through `overrides`: nothing is patched, and
+with the setting off KOReader's menus come back as they were.
+]]
+function Sereno:registerReaderZones()
+    if not (Device:isTouchDevice() and self.ui.registerTouchZones) then return end
+    local function enabled() return self.settings:nilOrTrue("reader_bars") end
+    self.ui:registerTouchZones({
+        {
+            id = "sereno_top_tap", ges = "tap",
+            screen_zone = { ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 1 / 8 },
+            overrides = { "readermenu_tap", "readermenu_ext_tap", "tap_forward", "tap_backward" },
+            handler = function() if enabled() then self:showChrome() return true end end,
+        },
+        {
+            id = "sereno_bottom_tap", ges = "tap",
+            screen_zone = { ratio_x = 0, ratio_y = 7 / 8, ratio_w = 1, ratio_h = 1 / 8 },
+            overrides = { "readerconfigmenu_tap", "readerconfigmenu_ext_tap", "tap_forward", "tap_backward" },
+            handler = function() if enabled() then self:showChrome() return true end end,
+        },
+        {
+            id = "sereno_top_swipe", ges = "swipe",
+            screen_zone = { ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 1 / 8 },
+            overrides = { "readermenu_swipe", "readermenu_ext_swipe", "rolling_swipe", "paging_swipe" },
+            handler = function(ges)
+                if enabled() and ges.direction == "south" then self:showControls() return true end
+            end,
+        },
+    })
+end
+
+function Sereno:chromeState()
+    local ui = self.ui
+    local doc = ui.document
+    local state = {}
+    local props = doc.getProps and doc:getProps() or {}
+    state.title = (props.title and props.title ~= "" and props.title) or doc.file:match("([^/]+)%.[^.]+$")
+    if props.authors and props.authors ~= "" then state.title = state.title .. " · " .. props.authors:gsub("\n", ", ") end
+    local page = ui.rolling and doc:getCurrentPage() or (ui.view and ui.view.state and ui.view.state.page) or 1
+    local total = doc:getPageCount() or 1
+    state.percent = total > 1 and (page - 1) / (total - 1) or 0
+    if ui.pagemap and ui.pagemap.wantsPageLabels and ui.pagemap:wantsPageLabels() then
+        state.page_label, state.total_label = ui.pagemap:getCurrentPageLabel(true), ui.pagemap:getLastPageLabel(true)
+    else
+        state.page_label, state.total_label = tostring(page), tostring(total)
+    end
+    if ui.toc then
+        state.chapter = ui.toc:getTocTitleByPage(page)
+        local ticks = ui.toc.getTocTicksFlattened and ui.toc:getTocTicksFlattened(true) or {}
+        state.ticks = {}
+        for _i, p in ipairs(ticks) do state.ticks[#state.ticks + 1] = total > 1 and (p - 1) / (total - 1) or 0 end
+        state.can_prev = ui.toc:getPreviousChapter(page) ~= nil or page > 1
+        state.can_next = ui.toc:getNextChapter(page) ~= nil
+    end
+    if session.back_page then state.back_label = T(_("Back to page %1"), session.back_label or session.back_page) end
+    state.page = page
+    return state
+end
+
+function Sereno:chromeCopy()
+    return { home = _("Home"), page_of = _("Page %s of %s") }
+end
+
+function Sereno:gotoPage(page)
+    if self.ui.link and self.ui.link.addCurrentLocationToStack then self.ui.link:addCurrentLocationToStack() end
+    self.ui:handleEvent(Event:new("GotoPage", page))
+end
+
+--- One tap in the reader's bars; returns true when they should be redrawn.
+function Sereno:onChromeAction(action, ges, overlay)
+    local ui = self.ui
+    local function later(fn)
+        overlay:onClose()
+        UIManager:nextTick(fn)
+    end
+    local t = action.type
+    if t == "home" then
+        later(function() ui:onClose() end)
+    elseif t == "panel" then
+        later(function() self:showPagePanel() end)
+    elseif t == "toc" then
+        later(function() if ui.toc then ui.toc:onShowToc() end end)
+    elseif t == "bookmarks" then
+        later(function() if ui.bookmark then ui.bookmark:onShowBookmark() end end)
+    elseif t == "search" then
+        later(function() if ui.search then ui.search:onShowFulltextSearchInput() end end)
+    elseif t == "menu" then
+        later(function() if ui.menu then ui.menu:onShowMenu() end end)
+    elseif t == "controls" then
+        later(function() self:showControls() end)
+    elseif t == "prev_chapter" or t == "next_chapter" or t == "seek" then
+        local state = self:chromeState()
+        local target
+        if t == "seek" then
+            local total = ui.document:getPageCount()
+            target = math.max(1, math.min(total, math.floor(ChromeLayout.seekFraction(action, ges.pos.x) * (total - 1) + 1.5)))
+        elseif t == "prev_chapter" and ui.toc then
+            target = ui.toc:getPreviousChapter(state.page) or 1
+        elseif ui.toc then
+            target = ui.toc:getNextChapter(state.page)
+        end
+        if target and target ~= state.page then
+            if not session.back_page then
+                session.back_page, session.back_label = state.page, state.page_label
+            end
+            self:gotoPage(target)
+            return true
+        end
+    elseif t == "back" then
+        if ui.link and ui.link.onGoBackLink then ui.link:onGoBackLink() else self.ui:handleEvent(Event:new("GotoPage", session.back_page)) end
+        session.back_page, session.back_label = nil, nil
+        return true
+    end
+    return false
+end
+
+function Sereno:showChrome()
+    if not self.ui.document then return end
+    session.back_page, session.back_label = nil, nil
+    local overlay
+    overlay = Overlay:new{
+        build_nodes = function(theme)
+            local nodes, geo = ChromeLayout.layout(theme, self:chromeState(), self:chromeCopy())
+            return nodes, {
+                { x = 0, y = 0, w = theme.width, h = geo.top_h },
+                { x = 0, y = geo.bottom_y - theme.touch * 2, w = theme.width, h = theme.height - geo.bottom_y + theme.touch * 2 },
+            }
+        end,
+        on_action = function(action, ges, ov) return self:onChromeAction(action, ges, ov) end,
+        on_close = function() session.chrome = nil end,
+        close_on_swipe = "north",
+    }
+    session.chrome = overlay
+    UIManager:show(overlay)
+    return overlay
+end
+
+function Sereno:onSerenoShowChrome()
+    self:showChrome()
     return true
 end
 
@@ -460,9 +757,9 @@ function Sereno:getMainMenu()
         },
         {
             text = _("Start with the home screen"),
-            checked_func = function() return self.settings:isTrue("home_at_start") end,
+            checked_func = function() return self.settings:nilOrTrue("home_at_start") end,
             callback = function()
-                self.settings:saveSetting("home_at_start", not self.settings:isTrue("home_at_start"))
+                self.settings:saveSetting("home_at_start", not self.settings:nilOrTrue("home_at_start"))
                 self.settings:flush()
             end,
         },
@@ -471,6 +768,16 @@ function Sereno:getMainMenu()
             checked_func = function() return self.settings:nilOrTrue("home_after_reader") end,
             callback = function()
                 self.settings:saveSetting("home_after_reader", not self.settings:nilOrTrue("home_after_reader"))
+                self.settings:flush()
+            end,
+            separator = true,
+        },
+        {
+            text = _("Sereno's bars in books"),
+            help_text = _("A tap at the top or bottom of a page shows Sereno's bars, and a swipe down from the top the quick controls, instead of KOReader's menus. KOReader's menu stays one tap away (⋮)."),
+            checked_func = function() return self.settings:nilOrTrue("reader_bars") end,
+            callback = function()
+                self.settings:saveSetting("reader_bars", not self.settings:nilOrTrue("reader_bars"))
                 self.settings:flush()
             end,
             separator = true,

@@ -2,11 +2,16 @@
 
 **A calmer interface for [KOReader](https://koreader.rocks), without patching KOReader.**
 
-Sereno is a KOReader plugin with three parts:
+Sereno is a KOReader plugin that replaces the interface you see every day:
 
+- **A complete shell:** Home, Library, Reading, Collections and Search behind one tab bar. You never fall back into KOReader's file browser unless you ask for it.
+- **Quick controls:** swipe down from the top edge for Wi-Fi, night mode, the light, rotation, restart, sleep, and brightness and warmth sliders.
+- **Bars in the book:** tap the top or bottom of a page for a toolbar (Home, text & page, contents, bookmarks, search, KOReader's menu) and a progress bar with chapter marks, chapter skips and *Back to page …*.
 - **A contextual home screen** designed from the physical size of your screen, not its pixel count.
 - **Print-like page counts, word counts and readability** for every book in your library, computed without opening the books.
 - **Tiered menus** that hide what you don't need, using KOReader's own menu-order mechanism.
+
+![Home, Library, quick controls and the bars in a book, on a Kindle Paperwhite](docs/images/shell/shell-paperwhite.png)
 
 ![The home screen while reading, after finishing a book, and before starting one](docs/images/states.png)
 
@@ -24,6 +29,22 @@ Sereno is a KOReader plugin with three parts:
 - **Library tiles:** books being read, unread and finished. They become one line, or disappear, when space is short.
 - **Shelf:** real covers, with progress bars on books in progress, and *See all* to open the library. Large screens get two rows.
 - **Tab bar:** KOReader's own icons with words under them; the active tab is marked.
+
+## Getting around
+
+| Where | Gesture | What you get |
+|---|---|---|
+| Anywhere in Sereno | Tap a tab | Home, Library (folders and covers), Reading (books in progress first), Collections, Search |
+| Library and other tabs | Swipe ← / → | Next or previous page of covers (e-ink pages, no scrolling) |
+| Library | Tap *Title ▾* | Sort by title, author or most recent |
+| Any book | Hold | Pages, words and readability |
+| Top edge, anywhere | Swipe ↓ (or tap the clock line) | Quick controls |
+| In a book | Tap the top or bottom of the page | Sereno's bars; tap the middle of the page to hide them |
+| Quick controls | *KOReader menu* / *File browser* | KOReader's own menu and file browser, whenever you need them |
+
+Everything goes through KOReader's public extension points: the bars are touch zones registered on the reader before KOReader's menu zones, the quick controls send KOReader's own events (`ToggleWifi`, `ToggleNightMode`, `IterateRotation`, …), and the shell is a full-screen window over the file manager. Turn off *Settings → Sereno → Sereno's bars in books* to get KOReader's menus back.
+
+![The same screens on a 6" Kindle](docs/images/shell/shell-kindle-basic.png)
 
 ## Why another interface plugin?
 
@@ -160,15 +181,15 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
    - **Kobo:** `/mnt/onboard/.adds/koreader/plugins/`
 2. Restart KOReader.
 3. Open **Settings → Sereno**:
-   - **Home screen** shows it now. You can also turn on *Start with the home screen*.
+   - Sereno's home screen opens at start-up (turn off *Start with the home screen* to keep KOReader's file browser).
    - **Reading layout** sets up the page you read; in a book, *Text & page panel…* opens the panel.
    - **Page counts → Count all books in this folder** counts the whole library once.
    - **Tiered menus** lets you choose *Reading*, *Everyday* or *Everything*.
 
 Covers come from KOReader's CoverBrowser cache when that plugin is on. Otherwise Sereno renders the cover image stored inside the EPUB itself, keeping at most 16 in memory. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
 
-> **Status:** 0.2, early. **It has not yet been tried on a real device.** What has been checked:
-> - **Specs:** 147 of them, run on LuaJIT with stubs of KOReader's modules.
+> **Status:** 0.3, early. **It has not yet been tried on a real device.** What has been checked:
+> - **Specs:** 174 of them, run on LuaJIT with stubs of KOReader's modules.
 > - **Real widget code:** the home screen is also drawn by KOReader's own code (blitbuffer, FreeType fonts, TextBoxWidget, IconWidget) on every CI run, with `tools/korender`.
 > - **Previews:** layout previews for several devices. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
