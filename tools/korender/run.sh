@@ -12,6 +12,7 @@
 #   LUAJIT_INCLUDE     LuaJIT headers, to build the lfs module (default: /usr/include/luajit-2.1)
 #   KORENDER_READER=1  also render reader pages (KOReader defaults vs Sereno's layout)
 #   KORENDER_DEVICE    only one device: kindle-basic, paperwhite or scribe
+#   CRENGINE_DIR       crengine checkout, for hyphenation patterns (default: ../crengine, sparse clone)
 #
 # Needs: git, gcc, unzip, ImageMagick (convert), rsvg-convert, and the system
 # FreeType library (libfreetype.so.6).
@@ -31,6 +32,13 @@ RUNTIME=$PARENT/.sereno-korender
 [ -d "$KO" ] || git clone --depth 1 https://github.com/koreader/koreader.git "$KO"
 [ -d "$BASE" ] || git clone --depth 1 https://github.com/koreader/koreader-base.git "$BASE"
 [ -d "$FONTS" ] || git clone --depth 1 https://github.com/koreader/koreader-fonts.git "$FONTS"
+# crengine's hyphenation patterns, for the reader pages
+CRENGINE=${CRENGINE_DIR:-$PARENT/crengine}
+if [ "${KORENDER_READER:-}" = "1" ] && [ ! -d "$CRENGINE/cr3gui/data/hyph" ]; then
+    git clone -q --depth 1 --filter=blob:none --sparse https://github.com/koreader/crengine.git "$CRENGINE"
+    git -C "$CRENGINE" sparse-checkout set cr3gui/data/hyph
+fi
+export KORENDER_HYPH=${KORENDER_HYPH:-$CRENGINE/cr3gui/data/hyph/English_US.pattern}
 
 mkdir -p "$RUNTIME/libs" "$RUNTIME/common"
 for f in frontend plugins resources defaults.lua datastorage.lua setupkoenv.lua; do
@@ -56,4 +64,8 @@ cd "$RUNTIME"
 for f in "$OUT"/*.pgm; do
     [ -f "$f" ] && convert "$f" "${f%.pgm}.png" && rm "$f"
 done
+# reader pages in device frames, side by side (needs Python's Pillow)
+if [ "${KORENDER_READER:-}" = "1" ] && python3 -c "import PIL" 2>/dev/null; then
+    python3 "$REPO/tools/korender/compose.py" "$OUT" "$OUT/composed" "$FONTS"
+fi
 echo "PNG files in $OUT"

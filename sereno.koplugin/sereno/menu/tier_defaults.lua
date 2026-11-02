@@ -66,7 +66,7 @@ local all_inside = {
 
 -- Always visible, whatever the tier: our own entry and the ways out.
 local pinned = {
-    sereno = true,
+    sereno = true, sereno_page = true,
     restart_koreader = true, sleep = true, poweroff = true, reboot = true,
     start_bq = true, exit = true,
 }

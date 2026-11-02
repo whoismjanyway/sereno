@@ -240,66 +240,98 @@ for _, d in ipairs(DEVICES) do
 end
 
 -- ---------------------------------------------------------------------------
--- Reader pages: the first page of a book set with KOReader's text renderer,
--- once with KOReader's default layout and once with Sereno's "Paperback"
--- preset, so the margins and text size can be compared on each device.
--- (KOReader lays out books with crengine, a C++ engine not available here;
--- the page is set with TextBoxWidget, which uses the same fonts and sizes
--- but its own line breaking, so line endings differ slightly.)
+-- Reader pages: the opening page of a book set like crengine sets it
+-- (tools/korender/bookpage.lua: crengine's hyphenation patterns, justified
+-- lines, first-line indents, the font's own line height), once with
+-- KOReader's default layout and once with Sereno's "Paperback", plus the
+-- "Text & page" panel over the page. crengine itself is a C++ engine not
+-- built here, so line endings can differ a little from a device.
 if os.getenv("KORENDER_READER") == "1" and books_dir then
     local Html = require("sereno/metrics/html")
     local ReaderLayout = require("sereno/reader/layout")
+    package.path = repo .. "/tools/korender/?.lua;" .. package.path
+    local BookPage = require("bookpage")
+    local hyph = os.getenv("KORENDER_HYPH") and BookPage.loadPatterns(os.getenv("KORENDER_HYPH"))
+    if not hyph then print("no hyphenation patterns (KORENDER_HYPH): lines will not be hyphenated") end
     local gatsby = books_dir .. "/f-scott-fitzgerald_the-great-gatsby.epub"
     local chapter = extract(gatsby, "epub/text/chapter-1.xhtml") or ""
-    local paras = {}
+    local blocks = {}
     for _, b in ipairs(Html.blocks(chapter)) do
-        if b.kind == "p" then paras[#paras + 1] = "\u{2003}" .. b.text end
-        if #paras >= 14 then break end
+        if b.kind == "p" or b.kind == "h" then blocks[#blocks + 1] = { kind = b.kind, text = b.text } end
+        if #blocks >= 16 then break end
     end
-    local text = table.concat(paras, "\n")
+    local total = metrics[gatsby] and metrics[gatsby].pages and metrics[gatsby].pages.print or 179
 
     for _, d in ipairs(DEVICES) do
         if not only or only == d.id then
             local Device = makeDevice(d)
             package.loaded["device"] = Device
             for name in pairs(package.loaded) do
-                if name:match("^ui/") then package.loaded[name] = nil end
+                if name:match("^ui/") or name:match("^sereno/reader/panelwidget") or name:match("^sereno/ui") then
+                    package.loaded[name] = nil
+                end
             end
             package.loaded["document/canvascontext"] = nil
             require("document/canvascontext"):init(Device)
             local Font = require("ui/font")
-            local TextBoxWidget = require("ui/widget/textboxwidget")
+            local RenderText = require("ui/rendertext")
+            local PanelWidget = require("sereno/reader/panelwidget")
+            local _ = require("sereno/l10n")
             local screen = { width = d.width, height = d.height, dpi = d.dpi }
+            local f = ReaderLayout.scaleFactor(screen)
+            -- KOReader's status bar: DMINIBAR_CONTAINER_HEIGHT (14) and a 14 px font, both scaled
+            local footer_px = math.ceil(14 * f)
+            screen.footer_px = footer_px
             local sereno = ReaderLayout.compute(screen, "paperback")
             local cases = {
-                { id = "koreader", v = { font_size = 22, h_margin = 10, t_margin = 10, b_margin = 10, line_spacing = 100 } },
-                { id = "sereno", v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
-                    b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
+                { id = "koreader", align = "justify",
+                  v = { font_size = 22, h_margin = 10, t_margin = 10, b_margin = 10, line_spacing = 100 } },
+                { id = "sereno", align = sereno.align,
+                  v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
+                        b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
+                { id = "panel", align = sereno.align, panel = true,
+                  v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
+                        b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
             }
-            for _, c in ipairs(cases) do
+            -- every preset, on the Paperwhite only
+            if d.id == "paperwhite" then
+                for _j, p in ipairs(ReaderLayout.PRESETS) do
+                    local pv = ReaderLayout.compute(screen, p.id)
+                    cases[#cases + 1] = { id = "preset-" .. p.id, align = pv.align,
+                        v = { font_size = pv.font_size, h_margin = pv.h_margins[1], t_margin = pv.t_margin,
+                              b_margin = pv.b_margin, line_spacing = pv.line_spacing } }
+                end
+            end
+            for _i, c in ipairs(cases) do
                 local ph = ReaderLayout.describe(screen, c.v)
                 local bb = Blitbuffer.new(d.width, d.height, Blitbuffer.TYPE_BB8)
                 bb:fill(Blitbuffer.COLOR_WHITE)
-                -- margins shaded so they can be seen
-                local shade = Blitbuffer.Color8(0xE4)
-                bb:paintRect(0, 0, ph.side_px, d.height, shade)
-                bb:paintRect(d.width - ph.side_px, 0, ph.side_px, d.height, shade)
-                bb:paintRect(0, 0, d.width, ph.top_px, shade)
-                bb:paintRect(0, d.height - ph.bottom_px, d.width, ph.bottom_px, shade)
                 local face = Font:getFace("NotoSerif-Regular.ttf", c.v.font_size)
-                local box = TextBoxWidget:new{
-                    text = text, face = face, width = d.width - 2 * ph.side_px,
-                    height = math.floor(ph.lines_per_page * ph.line_px),
-                    justified = true, line_height = ReaderLayout.LINE_EM * ph.line_spacing / 100 - 1,
-                    bgcolor = Blitbuffer.COLOR_WHITE,
+                local heading_face = Font:getFace("NotoSerif-Regular.ttf", c.v.font_size * 1.6)
+                local footer_face = Font:getFace("NotoSans-Regular.ttf", 14)
+                local text_h = d.height - ph.top_px - ph.bottom_px - footer_px
+                local stats = BookPage.render{
+                    bb = bb, x = ph.side_px, y = ph.top_px, width = d.width - 2 * ph.side_px, height = text_h,
+                    face = face, heading_face = heading_face, footer_face = footer_face, RenderText = RenderText,
+                    color = Blitbuffer.COLOR_BLACK, grey = Blitbuffer.COLOR_GRAY_4 or Blitbuffer.COLOR_DARK_GRAY,
+                    line_px = ph.line_px, font_px = ph.font_px, align = c.align, hyph = hyph,
+                    blocks = blocks, chapter_opening = true,
+                    footer = { left = string.format("1 / %d", total), right = "1%", y = d.height - footer_px, h = footer_px },
                 }
-                box:paintTo(bb, ph.side_px, ph.top_px)
-                box:free()
+                if c.panel then
+                    local panel = PanelWidget:new{ values = sereno, translate = _ }
+                    panel:paintTo(bb, 0, 0)
+                    panel:onCloseWidget()
+                end
+                local info = io.open(string.format("%s/reader-%s-%s.txt", out_dir, d.id, c.id), "w")
+                info:write(string.format("%.1f pt · %.1f mm margins · %d characters a line", ph.font_pt, ph.side_mm,
+                    stats.chars_per_line))
+                info:close()
                 local pgm = string.format("%s/reader-%s-%s.pgm", out_dir, d.id, c.id)
                 writePGM(bb, pgm)
                 bb:free()
-                print(string.format("%-12s %-8s %.1f pt, side %.1f mm, top %.1f mm, ~%d chars/line, %d lines -> %s",
-                    d.id, c.id, ph.font_pt, ph.side_mm, ph.top_mm, ph.chars_per_line, ph.lines_per_page, pgm))
+                print(string.format("%-12s %-8s %.1f pt, side %.1f mm, top %.1f mm, %d lines, ~%d chars/line, %d hyphens -> %s",
+                    d.id, c.id, ph.font_pt, ph.side_mm, ph.top_mm, stats.lines, stats.chars_per_line, stats.hyphens, pgm))
             end
         end
     end

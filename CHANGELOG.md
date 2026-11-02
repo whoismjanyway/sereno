@@ -3,6 +3,8 @@
 ## 0.2.0 (2026-11-02)
 
 ### Added
+- **Text & page panel:** a Kindle-style bottom sheet in the reader with layouts, text size, spacing, margins, alignment and paragraph style, each shown as a miniature page. It opens from the reader's typeset menu, Sereno's menu or a gesture, and re-flows the book with each tap.
+- **Book typography:** first-line indents, no blank lines between paragraphs, centred headings, no widows or orphans and hyphenation, through KOReader's own style tweaks. The user's previous tweaks are kept and restored.
 - **Reading layouts:** Compact, Paperback, Airy and Large print are defined in points, millimetres and a maximum line length. They apply to the open book through KOReader's own events and become the default for new books. The user's previous defaults are kept and can be restored.
 - **Print page numbers in the reader:** KOReader's stable page numbers are tuned to Sereno's page count, so the status bar and *Go to page* match the home screen. Publisher page numbers are kept.
 - **`tools/korender`:** draws the home screen, and sample reader pages, with KOReader's real widget code. It runs in CI.
@@ -29,7 +31,10 @@
 - **Development:** CI running all specs on LuaJIT, and layout previews for several devices.
 
 ### Changed
-- Margins are rounded up, so they are never under 6 mm.
+- **Readable reader margins:** Paperback now has 8 mm side margins (was 6 mm) and a 1.5 line height (was about 1.3), Airy 14 mm. The line height now follows crengine's real line height (1.36 em for 100 % in Noto Serif), and the line-length cap uses Noto Serif's measured width (0.52 em a character).
+- **Base text size on 10" screens:** 13.5 pt (was 12.5 pt).
+- **Reader pages in `tools/korender`:** now set like crengine sets them (hyphenation patterns, condensable spaces, indents, chapter openings, status bar), in device frames.
+- Interface margins are rounded up, so they are never under 6 mm.
 
 ### Fixed
 - **Shelf captions:** a word wider than its caption, such as "Frankenstein" on a 6" screen, is now shortened with an ellipsis. KOReader's text box used to break it mid-word ("Frankenstei / n"). Found by rendering with KOReader's real widgets.

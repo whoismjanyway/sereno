@@ -87,29 +87,37 @@ KOReader sets the reader's font size and margins in "relative pixels" that grow 
 | Paperwhite 5 | 11 pt | 1.8 mm |
 | Kindle Scribe | 16.6 pt | 2.6 mm |
 
-So the text changes size from device to device, and the margins stay a hair wide everywhere.
+So the text runs almost to the bezel on every device, and changes size from one device to the next. Sereno sets the page like a printed book instead: 8 mm margins, a book-like leading of 1.5, indented paragraphs, justified and hyphenated lines, and chapters that open lower on the page.
 
-**Settings → Sereno → Reading layout** offers four layouts defined in points and millimetres, converted to KOReader's units for your screen:
+![KOReader's default page next to Sereno's Paperback layout on a 6" Kindle, a Paperwhite and a Scribe](docs/images/design/reader-margins.png)
 
-| Layout | Text | Side margins | Line length | Line spacing |
-|---|---|---|---|---|
-| Compact | base − 0.5 pt | 4 mm | ≤ 75 characters | 100 % |
-| **Paperback** | base | 6 mm | ≤ 68 characters | 110 % |
-| Airy | base + 0.5 pt | 9 mm | ≤ 60 characters | 125 % |
-| Large print | base + 4 pt | 6 mm | ≤ 50 characters | 115 % |
+### The Text & page panel
 
-The base size depends on the screen: 10 pt on 6", 10.5 pt on 7", 11.5 pt on 8", 12.5 pt on larger screens. When a line would run longer than the layout's limit, the margins grow instead.
+Like the Kindle's *Aa* panel, every choice is a small picture of a page. Open it from the reader's typeset menu (*Text & page (Sereno)*), *Settings → Sereno → Reading layout*, or a gesture (*Sereno: text & page panel*). Each tap changes one thing and the book re-flows behind the panel straight away.
 
-How a layout is applied:
-- **Open book:** it changes immediately, through the same events as KOReader's own bottom menu, so KOReader's sliders show the new values.
-- **New books:** they open with it, through KOReader's own default settings.
-- **Going back:** choosing *KOReader's defaults* restores whatever defaults you had before.
+![The Text & page panel on three devices](docs/images/design/reader-panel.png)
 
-The first page of *The Great Gatsby* at real size, KOReader's defaults next to Sereno's *Paperback* (margins shaded):
+| Control | Choices |
+|---|---|
+| Layout | Compact, Paperback, Airy, Large print |
+| Text size | Half-point steps, with the line length it gives |
+| Spacing | Tight (1.36), Normal (1.5), Loose (1.7) line height |
+| Margins | Narrow (5 mm), Normal (8 mm), Wide (14 mm), widened further on big screens to keep lines under 58–75 characters |
+| Alignment | Justified or left |
+| Paragraphs | **Book:** first-line indents, no blank lines, centred headings, no widows or orphans, hyphenation everywhere. **Publisher:** the book's own style. |
 
-![KOReader's default reader layout vs Sereno Paperback, on three devices at real size](docs/images/design/reader-margins.png)
+How a change is applied:
+- **This book:** it changes immediately, through the same events as KOReader's own bottom menu, so KOReader's sliders show the new values.
+- **New books:** they open with it, through KOReader's default settings and style tweaks.
+- **Going back:** *Reading layout → KOReader's defaults* restores whatever defaults and style tweaks you had before.
 
-*Text set with KOReader's own font renderer by `tools/korender`. KOReader lays out books with crengine, which also hyphenates, so its line breaks differ a little. The status bar is not shown.*
+The four layouts on a Paperwhite:
+
+![Compact, Paperback, Airy and Large print on a Kindle Paperwhite](docs/images/design/reader-layouts.png)
+
+The base text size depends on the screen: 10 pt on 6", 10.5 pt on 7", 11.5 pt on 8", 13.5 pt on larger screens.
+
+*These pages are set by `tools/korender` with KOReader's own font renderer and crengine's hyphenation patterns, the way crengine sets them: greedy line filling, spaces that may condense to 75 %, 1.2 em indents. crengine itself isn't built there, so a line may break differently on a device.*
 
 **Page numbers that match.** Turn on *Page counts → Use these page numbers in the reader*. Sereno then tunes KOReader's own stable page numbers so each book has exactly the pages shown on the home screen. The status bar and *Go to page* use the same numbers, whatever your font settings. Books with publisher page numbers keep them.
 
@@ -153,13 +161,14 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
 2. Restart KOReader.
 3. Open **Settings → Sereno**:
    - **Home screen** shows it now. You can also turn on *Start with the home screen*.
+   - **Reading layout** sets up the page you read; in a book, *Text & page panel…* opens the panel.
    - **Page counts → Count all books in this folder** counts the whole library once.
    - **Tiered menus** lets you choose *Reading*, *Everyday* or *Everything*.
 
 Covers come from KOReader's CoverBrowser cache when that plugin is on. Otherwise Sereno renders the cover image stored inside the EPUB itself, keeping at most 16 in memory. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
 
 > **Status:** 0.2, early. **It has not yet been tried on a real device.** What has been checked:
-> - **Specs:** run on LuaJIT with stubs of KOReader's modules.
+> - **Specs:** 147 of them, run on LuaJIT with stubs of KOReader's modules.
 > - **Real widget code:** the home screen is also drawn by KOReader's own code (blitbuffer, FreeType fonts, TextBoxWidget, IconWidget) on every CI run, with `tools/korender`.
 > - **Previews:** layout previews for several devices. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -170,7 +179,7 @@ git clone --depth 1 https://github.com/koreader/koreader.git ../koreader   # opt
 KOREADER_DIR=../koreader luajit spec/run.lua                               # all specs
 luajit tools/count.lua path/to/book.epub                                   # page counts from the command line
 luajit tools/preview.lua previews && rsvg-convert -o p.png previews/paperwhite-reading.svg
-KORENDER_READER=1 tools/korender/run.sh out/ books/                       # draw with KOReader's real widgets
+KORENDER_READER=1 tools/korender/run.sh out/ books/                       # draw with KOReader's real widgets (+ reader pages)
 ```
 
 - **Code layout:** [docs/architecture.md](docs/architecture.md)

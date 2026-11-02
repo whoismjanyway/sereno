@@ -25,6 +25,7 @@ local Library = require("sereno/library")
 local MetricsDialog = require("sereno/metrics/dialog")
 local MetricsService = require("sereno/metrics/service")
 local ReaderLayout = require("sereno/reader/layout")
+local PanelWidget = require("sereno/reader/panelwidget")
 local MetricsCache = require("sereno/metrics/cache")
 
 local DataStorage = require("datastorage")
@@ -205,6 +206,9 @@ function Sereno:onDispatcherRegisterActions()
     })
     Dispatcher:registerAction("sereno_show_home", {
         category = "none", event = "SerenoShowHome", title = _("Sereno: home screen"), general = true,
+    })
+    Dispatcher:registerAction("sereno_page_panel", {
+        category = "none", event = "SerenoShowPagePanel", title = _("Sereno: text & page panel"), reader = true,
     })
 end
 
@@ -432,6 +436,17 @@ function Sereno:addToMainMenu(menu_items)
         sorting_hint = "setting",
         sub_item_table_func = function() return self:getMainMenu() end,
     }
+    if self.ui.document then
+        -- next to KOReader's own font and margin settings, in the typeset tab
+        menu_items.sereno_page = {
+            text = _("Text & page (Sereno)"),
+            sorting_hint = "typeset",
+            callback = function(touchmenu_instance)
+                if touchmenu_instance then touchmenu_instance:closeMenu() end
+                self:showPagePanel()
+            end,
+        }
+    end
 end
 
 function Sereno:getMainMenu()
@@ -535,13 +550,24 @@ function Sereno:layoutSummary(values)
         string.format("%.1f", ph.font_pt), string.format("%.0f", ph.side_mm), ph.chars_per_line, ph.lines_per_page)
 end
 
---- Applies a preset to the open book, through the same events as KOReader's own bottom menu.
-function Sereno:applyReadingLayout(values)
+--- The page description in use: the last one chosen, or Paperback.
+function Sereno:currentSpec()
+    return ReaderLayout.spec(self.settings:readSetting("reading_spec") or "paperback")
+end
+
+--[[--
+Applies a layout to the open book, through the same events as KOReader's
+own bottom menu. `changed` names the one axis that changed (pt, spacing,
+margins, align, book_style), so a tap in the panel re-flows the book once;
+nil applies everything.
+]]
+function Sereno:applyReadingLayout(values, changed)
     local doc = self.ui.document
     if not (doc and self.ui.rolling and doc.configurable) then
         UIManager:show(InfoMessage:new{ text = _("Reading layouts apply to reflowable books (EPUB, FB2, MOBI…), not to PDF or comics.") })
         return false
     end
+    local all = changed == nil
     local cfg = doc.configurable
     -- keep KOReader's own config dialog in sync, so its sliders show the new values
     cfg.font_size = values.font_size
@@ -549,14 +575,75 @@ function Sereno:applyReadingLayout(values)
     cfg.t_page_margin = values.t_margin
     cfg.b_page_margin = values.b_margin
     cfg.line_spacing = values.line_spacing
-    self.ui:handleEvent(Event:new("SetFontSize", values.font_size))
-    self.ui:handleEvent(Event:new("SetLineSpace", values.line_spacing))
-    -- all four margins in one re-layout; ReaderTypeset keeps the unscaled
-    -- values it later edits one side at a time from
-    local margins = { values.h_margins[1], values.t_margin, values.h_margins[2], values.b_margin }
-    if self.ui.typeset then self.ui.typeset.unscaled_margins = { margins[1], margins[2], margins[3], margins[4] } end
-    self.ui:handleEvent(Event:new("SetPageMargins", margins))
+    if all or changed == "pt" then
+        self.ui:handleEvent(Event:new("SetFontSize", values.font_size))
+    end
+    if all or changed == "spacing" then
+        self.ui:handleEvent(Event:new("SetLineSpace", values.line_spacing))
+    end
+    -- the margins follow the text size too, through the line-length cap
+    if all or changed == "pt" or changed == "margins" then
+        -- all four margins in one re-layout; ReaderTypeset keeps the unscaled
+        -- values it later edits one side at a time from
+        local margins = { values.h_margins[1], values.t_margin, values.h_margins[2], values.b_margin }
+        if self.ui.typeset then self.ui.typeset.unscaled_margins = { margins[1], margins[2], margins[3], margins[4] } end
+        self.ui:handleEvent(Event:new("SetPageMargins", margins))
+    end
+    if all or changed == "align" or changed == "book_style" then
+        self:applyTypography(values.spec, true)
+    end
     return true
+end
+
+--[[--
+Book typography through KOReader's own style tweaks, set as defaults for
+every book (what "Use on all books" does in KOReader's style tweaks menu):
+justified or left-aligned text, and, for the book style, first-line
+indents, no blank lines between paragraphs, centred headings, no widows
+or orphans and hyphenation everywhere. The user's previous choices for
+these tweaks are kept aside and restored with "KOReader's defaults".
+]]
+function Sereno:applyTypography(spec, apply_now)
+    local st = self.ui.styletweak
+    local current = (st and st.global_tweaks) or G_reader_settings:readSetting("style_tweaks")
+    local global = {}
+    if current then
+        for id, v in pairs(current) do global[id] = v end
+    else
+        local ok, CssTweaks = pcall(require, "ui/data/css_tweaks")
+        for id, v in pairs(ok and CssTweaks.DEFAULT_GLOBAL_STYLE_TWEAKS or {}) do global[id] = v end
+    end
+    if not self.settings:readSetting("tweaks_backup") then
+        local backup = {}
+        for _i, id in ipairs(ReaderLayout.allTweaks()) do backup[id] = global[id] or false end
+        self.settings:saveSetting("tweaks_backup", backup)
+    end
+    local on, off = ReaderLayout.tweaks(spec)
+    for _i, id in ipairs(on) do global[id] = true end
+    for _i, id in ipairs(off) do global[id] = nil end
+    G_reader_settings:saveSetting("style_tweaks", global)
+    if st and st.global_tweaks then
+        st.global_tweaks = global
+        -- a per-book choice for one of these would hide the new default
+        if st.doc_tweaks then
+            for _i, id in ipairs(ReaderLayout.allTweaks()) do st.doc_tweaks[id] = nil end
+        end
+        if apply_now and st.updateCssText then st:updateCssText(true) end
+    end
+end
+
+function Sereno:restoreTypography()
+    local backup = self.settings:readSetting("tweaks_backup")
+    if not backup then return end
+    local st = self.ui.styletweak
+    local global = (st and st.global_tweaks) or G_reader_settings:readSetting("style_tweaks") or {}
+    for id, v in pairs(backup) do global[id] = v or nil end
+    G_reader_settings:saveSetting("style_tweaks", global)
+    if st and st.global_tweaks then
+        st.global_tweaks = global
+        if self.ui.document and st.updateCssText then st:updateCssText(true) end
+    end
+    self.settings:delSetting("tweaks_backup")
 end
 
 --- Sets (or, with nil, removes) Sereno's layout as the default for new books.
@@ -572,21 +659,73 @@ function Sereno:setDefaultReadingLayout(values)
         for key, v in pairs(ReaderLayout.defaultSettings(values)) do
             G_reader_settings:saveSetting(key, v)
         end
-        self.settings:saveSetting("reading_layout", values.preset)
+        self:applyTypography(values.spec, false)
+        self.settings:saveSetting("reading_layout", values.preset or "custom")
+        self.settings:saveSetting("reading_spec", values.spec)
     else
         local backup = self.settings:readSetting("copt_backup") or {}
         for _i, key in ipairs(keys) do
             if backup[key] then G_reader_settings:saveSetting(key, backup[key]) else G_reader_settings:delSetting(key) end
         end
+        self:restoreTypography()
         self.settings:delSetting("copt_backup")
         self.settings:delSetting("reading_layout")
     end
     self.settings:flush()
 end
 
+--- One tap in the panel: the new spec, applied to the book and saved.
+function Sereno:onPanelAction(action)
+    local spec = self:currentSpec()
+    local changed
+    if action.type == "preset" then
+        spec = ReaderLayout.spec(action.id)
+    elseif action.type == "size" then
+        spec = ReaderLayout.with(spec, "pt", spec.pt + action.delta)
+        changed = "pt"
+    elseif action.type == "set" then
+        spec = ReaderLayout.with(spec, action.key, action.value)
+        changed = action.key
+    end
+    local values = ReaderLayout.compute(self:readerScreen(), spec)
+    if self.ui.document then self:applyReadingLayout(values, changed) end
+    self:setDefaultReadingLayout(values)
+    return values
+end
+
+--- The "Text & page" panel, like the Kindle's "Aa" panel.
+function Sereno:showPagePanel()
+    if not (self.ui.document and self.ui.rolling) then
+        UIManager:show(InfoMessage:new{ text = _("Reading layouts apply to reflowable books (EPUB, FB2, MOBI…), not to PDF or comics.") })
+        return
+    end
+    local panel = PanelWidget:new{
+        values = ReaderLayout.compute(self:readerScreen(), self:currentSpec()),
+        translate = _,
+        on_action = function(action) return self:onPanelAction(action) end,
+    }
+    UIManager:show(panel)
+    return panel
+end
+
+function Sereno:onSerenoShowPagePanel()
+    self:showPagePanel()
+    return true
+end
+
 function Sereno:getReadingMenu()
     local screen = self:readerScreen()
     local menu = {}
+    if self.ui.document then
+        menu[#menu + 1] = {
+            text = _("Text & page panel…"),
+            separator = true,
+            callback = function(touchmenu_instance)
+                if touchmenu_instance then touchmenu_instance:closeMenu() end
+                self:showPagePanel()
+            end,
+        }
+    end
     for _i, preset in ipairs(ReaderLayout.PRESETS) do
         local values = ReaderLayout.compute(screen, preset.id)
         menu[#menu + 1] = {
@@ -603,6 +742,15 @@ function Sereno:getReadingMenu()
                     timeout = 4,
                 })
             end,
+        }
+    end
+    if self.settings:readSetting("reading_layout") == "custom" then
+        menu[#menu + 1] = {
+            text = _("Custom"),
+            help_text = self:layoutSummary(ReaderLayout.compute(screen, self:currentSpec())),
+            radio = true,
+            checked_func = function() return true end,
+            callback = function() end,
         }
     end
     menu[#menu].separator = true

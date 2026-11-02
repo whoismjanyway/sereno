@@ -24,7 +24,10 @@ sereno.koplugin/
     │   ├── service.lua        KOReader glue: libarchive, documents, Trapper, LuaSocket
     │   └── dialog.lua         "Pages & readability" dialog
     ├── ui/theme.lua           ✱ design system from physical units
-    ├── reader/layout.lua      ✱ reading layouts in pt/mm → KOReader's font size and margins
+    ├── reader/
+    │   ├── layout.lua         ✱ the page in pt/mm (size, spacing, margins, alignment, paragraphs) → KOReader settings and style tweaks
+    │   ├── panel.lua          ✱ the Text & page panel as positioned nodes, and its miniature pages
+    │   └── panelwidget.lua    KOReader widget: bottom sheet, taps
     ├── home/
     │   ├── context.lua        ✱ what to show: reading / finished / start / empty
     │   ├── presenter.lua      ✱ the words on screen
@@ -42,7 +45,9 @@ sereno.koplugin/
 | Hide menu items | `settings/{reader,filemanager}_menu_order.lua` with `KOMenu:disabled`, KOReader's own per-user override, read on every menu build. Regenerated at start from KOReader's current defaults. |
 | Own menu | `ui.menu:registerToMainMenu` |
 | Long-press entry | `FileManager:addFileDialogButtons` |
-| Gestures | `Dispatcher:registerAction` (`sereno_show_home`, `sereno_cycle_tier`, …) |
+| Gestures | `Dispatcher:registerAction` (`sereno_show_home`, `sereno_page_panel`, `sereno_cycle_tier`, …) |
+| Reader menu entry | `menu_items.sereno_page` with `sorting_hint = "typeset"`, next to KOReader's own font settings |
+| Page layout | `SetFontSize`, `SetLineSpace`, `SetPageMargins` events; `ReaderStyleTweak.global_tweaks` and `updateCssText`; `copt_*` and `style_tweaks` in `G_reader_settings` |
 | Home screen | A regular `InputContainer` shown with `UIManager:show` |
 | Covers and metadata | `package.loaded.bookinfomanager` (CoverBrowser's cache) when present |
 | Reading state | `ReadHistory.hist`, `BookList.getBookInfo`, `DocSettings` |
@@ -66,7 +71,7 @@ KOReader only adds a plugin's folder to `package.path` while `main.lua` is being
 
 It then draws Sereno's HomeScreen with KOReader's real Blitbuffer, Font, TextWidget, TextBoxWidget, IconWidget and ImageWidget code, and writes PNGs. The only C pieces it replaces are image decoding (nanosvg, turbojpeg, MuPDF scaling), which ImageMagick and Lua stand in for, and utf8proc case folding. CI runs it on every push, so a change in KOReader's widget API that breaks Sereno's drawing shows up there.
 
-With `KORENDER_READER=1` it also sets sample reader pages with KOReader's text renderer to compare reading layouts. crengine itself is not built, so these pages are an approximation of the reader, not a screenshot of it.
+With `KORENDER_READER=1` it also sets the opening page of a book, KOReader's default layout next to Sereno's, every preset, and the Text & page panel over the page (the real `PanelWidget`). `tools/korender/bookpage.lua` sets those pages the way crengine does: crengine's hyphenation patterns (Liang's algorithm), greedy line filling with spaces that may condense to 75 %, first-line indents, the font's own line height. crengine itself is not built, so these pages are a close approximation of the reader, not a screenshot of it. `tools/korender/compose.py` puts them in device frames for the README.
 
 ## Tests
 
@@ -79,6 +84,6 @@ With `KORENDER_READER=1` it also sets sample reader pages with KOReader's text r
 | `metrics_spec` | ZIP, HTML, EPUB, estimators, readability, cache and Open Library, plus real books when `SERENO_BOOKS` is set |
 | `theme_spec` | Physical sizing |
 | `home_spec` | Context, wording, and the layout on 7 screen sizes × 4 states |
-| `reader_spec` | Reading layouts: physical sizes, line-length cap, valid KOReader values |
-| `smoke_spec` | Loads `main.lua` against stubs of KOReader modules (`spec/koreader_stubs.lua`), walks every menu, shows the home screen, taps every target, opens the metrics dialog, counts a folder |
+| `reader_spec` | Reading layouts: physical sizes, margins never under 5 mm, line-length cap, independent axes, style tweak ids that exist in KOReader |
+| `smoke_spec` | Loads `main.lua` against stubs of KOReader modules (`spec/koreader_stubs.lua`), walks every menu, shows the home screen, taps every target, opens the metrics dialog, counts a folder, drives the Text & page panel tap by tap and checks it fits six screens |
 | `l10n_spec` | Translations are complete and keep their placeholders |

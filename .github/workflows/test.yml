@@ -55,11 +55,13 @@ jobs:
           KOREADER_DIR: ${{ github.workspace }}/../koreader
           KORENDER_READER: "1"
         run: |
-          sudo apt-get install -y libluajit-5.1-dev imagemagick
+          sudo apt-get install -y libluajit-5.1-dev imagemagick python3-pil
           tools/korender/run.sh korender ../books
-          ls korender/*.png
+          ls korender/*.png korender/composed/*.png
 
       - uses: actions/upload-artifact@v4
         with:
           name: koreader-render
-          path: korender/*.png
+          path: |
+            korender/*.png
+            korender/composed/*.png

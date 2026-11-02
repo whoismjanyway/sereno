@@ -10,42 +10,125 @@ ignoring the screen's density. With its defaults (font 22, margins 10):
   Kindle Scribe, 300 dpi 16.4 pt text, 2.6 mm side margins
 
 so text grows with the pixel count and the margins stay a hair wide on
-every device. Sereno's presets are defined physically (points, mm, a
-maximum number of characters per line) and converted back to KOReader's
-units for the screen at hand. Pure Lua; the screen is passed in.
+every device: the text runs almost to the bezel.
+
+Sereno describes a page the way a book designer (or the Kindle's own
+"Aa" panel) does, on four independent axes:
+
+  text size   points, in half-point steps around a base set by the diagonal
+  spacing     tight / normal / loose line spacing
+  margins     narrow / normal / wide, in millimetres, plus a maximum line
+              length: on big screens the margins grow instead of the lines
+  alignment   justified or left-aligned
+
+and the presets (Compact, Paperback, Airy, Large print) are just named
+combinations. Everything is converted back to KOReader's units for the
+screen at hand. Pure Lua; the screen is passed in.
 ]]
 
 local ReaderLayout = {}
 
--- average advance of a serif text face, spaces included, in em
-ReaderLayout.CHAR_EM = 0.47
--- KOReader's interline spacing 100 % gives roughly this line height, in em
-ReaderLayout.LINE_EM = 1.2
+-- average advance of running text in Noto Serif (KOReader's default face),
+-- spaces included, in em: measured on set pages with KOReader's renderer
+ReaderLayout.CHAR_EM = 0.52
+-- crengine's interline spacing 100 % is the font's own line height
+-- (ascender + descender): 1.36 em for Noto Serif, KOReader's default face
+ReaderLayout.LINE_EM = 1.36
 
 ReaderLayout.KOREADER_DEFAULT = { font_size = 22, h_margin = 10, t_margin = 10, b_margin = 10, line_spacing = 100 }
 
--- size offsets are added to the base size chosen by screen diagonal
-ReaderLayout.PRESETS = {
-    { id = "compact", name = "Compact", pt = -0.5, side_mm = 4, top_mm = 3, bottom_mm = 3, line_spacing = 100, max_chars = 75 },
-    { id = "paperback", name = "Paperback", pt = 0, side_mm = 6, top_mm = 5, bottom_mm = 5, line_spacing = 110, max_chars = 68 },
-    { id = "airy", name = "Airy", pt = 0.5, side_mm = 9, top_mm = 8, bottom_mm = 8, line_spacing = 125, max_chars = 60 },
-    { id = "large", name = "Large print", pt = 4, side_mm = 6, top_mm = 5, bottom_mm = 5, line_spacing = 115, max_chars = 50 },
+-- size range offered by the panel, in points relative to the base size
+ReaderLayout.MIN_DELTA, ReaderLayout.MAX_DELTA, ReaderLayout.STEP = -2, 10, 0.5
+
+ReaderLayout.SPACING = {
+    { id = "tight", name = "Tight", line_spacing = 100 },  -- 1.36 em
+    { id = "normal", name = "Normal", line_spacing = 110 }, -- 1.5 em, a well-set paperback
+    { id = "loose", name = "Loose", line_spacing = 125 },  -- 1.7 em
 }
 
-function ReaderLayout.preset(id)
-    for _i, p in ipairs(ReaderLayout.PRESETS) do
-        if p.id == id then return p end
+-- Margins as in printed books: never less than a finger's grip on small
+-- screens, and the column capped to a comfortable line length.
+ReaderLayout.MARGINS = {
+    { id = "narrow", name = "Narrow", side_mm = 5, top_mm = 5, bottom_mm = 4, max_chars = 75 },
+    { id = "normal", name = "Normal", side_mm = 8, top_mm = 8, bottom_mm = 6, max_chars = 66 },
+    { id = "wide", name = "Wide", side_mm = 14, top_mm = 11, bottom_mm = 8, max_chars = 58 },
+}
+
+ReaderLayout.ALIGNMENTS = {
+    { id = "justify", name = "Justified" },
+    { id = "left", name = "Left" },
+}
+
+ReaderLayout.PRESETS = {
+    { id = "compact", name = "Compact", pt = -0.5, spacing = "tight", margins = "narrow", align = "justify" },
+    { id = "paperback", name = "Paperback", pt = 0, spacing = "normal", margins = "normal", align = "justify" },
+    { id = "airy", name = "Airy", pt = 0.5, spacing = "loose", margins = "wide", align = "left" },
+    { id = "large", name = "Large print", pt = 4, spacing = "normal", margins = "normal", align = "left", max_chars = 50 },
+}
+
+--[[--
+KOReader style tweaks (frontend/ui/data/css_tweaks.lua) that make a book
+look typeset rather than like a word-processor page: first-line indents
+instead of blank lines between paragraphs, no indent after a heading,
+centred headings, no widows or orphans, hyphenation everywhere.
+]]
+ReaderLayout.BOOK_TWEAKS = {
+    "paragraph_indent",
+    "paragraph_first_no_indent",
+    "paragraph_no_whitespace",
+    "headings_align_center",
+    "widows_orphans_avoid",
+    "hyphenate_all_auto",
+}
+ReaderLayout.ALIGN_TWEAKS = { justify = "text_align_most_justify", left = "text_align_most_left" }
+
+local function find(list, id)
+    for _i, item in ipairs(list) do
+        if item.id == id then return item end
     end
-    return ReaderLayout.PRESETS[2]
+end
+
+function ReaderLayout.preset(id)
+    return find(ReaderLayout.PRESETS, id) or ReaderLayout.PRESETS[2]
+end
+function ReaderLayout.spacing(id) return find(ReaderLayout.SPACING, id) or ReaderLayout.SPACING[2] end
+function ReaderLayout.margins(id) return find(ReaderLayout.MARGINS, id) or ReaderLayout.MARGINS[2] end
+
+--- A page description ("spec") from a preset id, or a copy of a spec.
+function ReaderLayout.spec(p)
+    if type(p) ~= "table" then p = ReaderLayout.preset(p) end
+    return {
+        pt = p.pt or 0,
+        spacing = ReaderLayout.spacing(p.spacing).id,
+        margins = ReaderLayout.margins(p.margins).id,
+        align = (p.align == "left") and "left" or "justify",
+        max_chars = p.max_chars,
+        book_style = p.book_style ~= false,
+    }
+end
+
+--- The preset a spec corresponds to, if any.
+function ReaderLayout.presetFor(spec)
+    for _i, p in ipairs(ReaderLayout.PRESETS) do
+        if p.pt == spec.pt and p.spacing == spec.spacing and p.margins == spec.margins
+            and p.align == spec.align and p.max_chars == spec.max_chars then
+            return p
+        end
+    end
 end
 
 --- Reading size in points by physical diagonal: about 45-55 characters a
--- line on 6-7" screens, like a mass-market paperback.
+-- line on 6-7" screens with normal margins, like a mass-market paperback.
 function ReaderLayout.basePt(diagonal_in)
     if diagonal_in < 6.5 then return 10 end
     if diagonal_in < 7.5 then return 10.5 end
     if diagonal_in < 9 then return 11.5 end
-    return 12.5
+    -- 10" screens are read from further away, often on a desk or a lap
+    return 13.5
+end
+
+function ReaderLayout.diagonal(screen)
+    return math.sqrt(screen.width ^ 2 + screen.height ^ 2) / screen.dpi
 end
 
 --- KOReader's default scale factor: Screen:scaleBySize(n) = ceil(n * factor).
@@ -80,6 +163,7 @@ function ReaderLayout.describe(screen, v)
         top_mm = mm(px(v.t_margin)),
         bottom_mm = mm(px(v.b_margin)),
         line_px = line_px,
+        line_em = ReaderLayout.LINE_EM * (v.line_spacing or 100) / 100,
         chars_per_line = math.floor(content_w / (font_px * ReaderLayout.CHAR_EM)),
         lines_per_page = math.floor(text_h / line_px),
         line_spacing = v.line_spacing or 100,
@@ -87,38 +171,59 @@ function ReaderLayout.describe(screen, v)
 end
 
 --[[--
-KOReader values for a preset on this screen.
-@treturn table { font_size, h_margins = {l, r}, t_margin, b_margin, line_spacing, preset, physical = describe() }
+KOReader values for a preset id or a spec on this screen.
+@treturn table { font_size, h_margins = {l, r}, t_margin, b_margin, line_spacing,
+  preset (id or nil), spec, physical = describe() }
 ]]
-function ReaderLayout.compute(screen, preset_id)
-    local p = type(preset_id) == "table" and preset_id or ReaderLayout.preset(preset_id)
+function ReaderLayout.compute(screen, preset_or_spec)
+    local spec = ReaderLayout.spec(preset_or_spec)
+    local delta = math.max(ReaderLayout.MIN_DELTA, math.min(ReaderLayout.MAX_DELTA, spec.pt))
+    spec.pt = delta
+    local spacing, margins = ReaderLayout.spacing(spec.spacing), ReaderLayout.margins(spec.margins)
     local f = ReaderLayout.scaleFactor(screen)
-    local diagonal = math.sqrt(screen.width ^ 2 + screen.height ^ 2) / screen.dpi
-    local pt = ReaderLayout.basePt(diagonal) + p.pt
+    local pt = ReaderLayout.basePt(ReaderLayout.diagonal(screen)) + delta
     local font_px = pt * screen.dpi / 72
     -- KOReader accepts half steps for the font size; it never goes below 12
     local font_size = math.max(12, round(font_px / f * 2) / 2)
     font_px = math.ceil(font_size * f)
 
-    local side_px = p.side_mm * screen.dpi / 25.4
+    local side_px = margins.side_mm * screen.dpi / 25.4
     -- keep lines short enough to read comfortably: widen the margins if needed
-    local max_w = p.max_chars * ReaderLayout.CHAR_EM * font_px
+    local max_chars = math.min(spec.max_chars or margins.max_chars, margins.max_chars)
+    local max_w = max_chars * ReaderLayout.CHAR_EM * font_px
     if screen.width - 2 * side_px > max_w then side_px = (screen.width - max_w) / 2 end
-    local h = round(side_px / f)
-    local t = round(p.top_mm * screen.dpi / 25.4 / f)
-    local b = round(p.bottom_mm * screen.dpi / 25.4 / f)
+    local h = math.ceil(side_px / f)
+    local t = math.ceil(margins.top_mm * screen.dpi / 25.4 / f)
+    local b = math.ceil(margins.bottom_mm * screen.dpi / 25.4 / f)
+    local p = ReaderLayout.presetFor(spec)
     local values = {
         font_size = font_size,
         h_margins = { h, h },
         t_margin = t,
         b_margin = b,
-        line_spacing = p.line_spacing,
-        preset = p.id,
+        line_spacing = spacing.line_spacing,
+        preset = p and p.id or nil,
+        spec = spec,
+        align = spec.align,
+        book_style = spec.book_style,
     }
     values.physical = ReaderLayout.describe(screen, {
-        font_size = font_size, h_margin = h, t_margin = t, b_margin = b, line_spacing = p.line_spacing,
+        font_size = font_size, h_margin = h, t_margin = t, b_margin = b, line_spacing = spacing.line_spacing,
     })
+    values.physical.pt_nominal = pt
     return values
+end
+
+--- The same spec with one axis changed (used by the panel).
+function ReaderLayout.with(spec, key, value)
+    local s = ReaderLayout.spec(spec)
+    if key == "pt" then
+        value = math.max(ReaderLayout.MIN_DELTA, math.min(ReaderLayout.MAX_DELTA, value))
+    end
+    s[key] = value
+    -- a fixed line-length cap only belongs to the preset that set it
+    if key == "margins" then s.max_chars = nil end
+    return s
 end
 
 ReaderLayout.SETTING_KEYS = { "copt_font_size", "copt_h_page_margins", "copt_t_page_margin", "copt_b_page_margin", "copt_line_spacing" }
@@ -132,6 +237,31 @@ function ReaderLayout.defaultSettings(values)
         copt_b_page_margin = values.b_margin,
         copt_line_spacing = values.line_spacing,
     }
+end
+
+--[[--
+The style tweaks to turn on and off for a spec, as two lists of ids.
+Alignment is always set; the book style tweaks only when book_style is on.
+]]
+function ReaderLayout.tweaks(spec)
+    local on, off = {}, {}
+    for align, id in pairs(ReaderLayout.ALIGN_TWEAKS) do
+        if align == spec.align then on[#on + 1] = id else off[#off + 1] = id end
+    end
+    for _i, id in ipairs(ReaderLayout.BOOK_TWEAKS) do
+        if spec.book_style ~= false then on[#on + 1] = id else off[#off + 1] = id end
+    end
+    table.sort(on); table.sort(off)
+    return on, off
+end
+
+--- Every tweak id Sereno may change (to keep the user's own choices aside).
+function ReaderLayout.allTweaks()
+    local all = {}
+    for _i, id in ipairs(ReaderLayout.BOOK_TWEAKS) do all[#all + 1] = id end
+    for _a, id in pairs(ReaderLayout.ALIGN_TWEAKS) do all[#all + 1] = id end
+    table.sort(all)
+    return all
 end
 
 return ReaderLayout

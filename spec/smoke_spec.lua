@@ -184,10 +184,13 @@ test("a preset applies to the open book and becomes the default", function()
     S.global.copt_font_size = 30 -- the user's own default, to be kept aside
     local menu = p:getReadingMenu()
     walk(menu, 0)
-    menu[2].callback() -- Paperback
+    eq(menu[1].text, "Text & page panel…")
+    menu[3].callback() -- Paperback
     local names = {}
     for _i, e in ipairs(events) do names[#names + 1] = e.name end
     eq(table.concat(names, ","), "SetFontSize,SetLineSpace,SetPageMargins")
+    truthy(S.global.style_tweaks and S.global.style_tweaks.paragraph_indent and S.global.style_tweaks.text_align_most_justify,
+        "book typography set as KOReader style tweaks")
     truthy(ui.document.configurable.font_size and ui.document.configurable.h_page_margins, "config dialog values updated")
     eq(#events[3].args[1], 4, "four margins in one event")
     truthy(S.global.copt_font_size ~= 30 and S.global.copt_h_page_margins, "new default saved")
@@ -195,6 +198,86 @@ test("a preset applies to the open book and becomes the default", function()
     menu[#menu].callback() -- back to the user's previous defaults
     eq(S.global.copt_font_size, 30, "previous default restored")
     eq(S.global.copt_h_page_margins, nil)
+    eq(S.global.style_tweaks.paragraph_indent, nil, "style tweaks restored")
+end)
+
+test("the text & page panel changes one thing per tap", function()
+    local ui = newUI("reader")
+    ui.rolling = {}
+    ui.typeset = {}
+    ui.document.configurable = {}
+    local applied_css = 0
+    ui.styletweak = { global_tweaks = { ["footnote-inpage_epub"] = true }, doc_tweaks = { paragraph_indent = false },
+        updateCssText = function() applied_css = applied_css + 1 end }
+    local events = {}
+    ui.handleEvent = function(_self, e) events[#events + 1] = e end
+    local p = Sereno:new{ ui = ui }
+    local items = {}
+    p:addToMainMenu(items)
+    eq(items.sereno_page.sorting_hint, "typeset")
+    local panel = p:showPagePanel()
+    eq(S.shown[#S.shown], panel)
+    local bb = S.fakeBB()
+    panel:paintTo(bb, 0, 0)
+    truthy(#bb.calls > 20, "panel drew its pages")
+    local function tapOn(pred)
+        for _i, n in ipairs(panel.nodes) do
+            if n.kind == "tap" and pred(n.action) then
+                panel:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } })
+                return true
+            end
+        end
+    end
+    truthy(tapOn(function(a) return a.type == "set" and a.key == "margins" and a.value == "wide" end), "margins option")
+    eq(#events, 1)
+    eq(events[1].name, "SetPageMargins")
+    eq(p:currentSpec().margins, "wide")
+    eq(p.settings:readSetting("reading_layout"), "custom")
+    events = {}
+    tapOn(function(a) return a.type == "set" and a.key == "align" and a.value == "left" end)
+    eq(#events, 0, "alignment is a style tweak, not a re-layout event")
+    eq(applied_css, 1)
+    truthy(ui.styletweak.global_tweaks.text_align_most_left and not ui.styletweak.global_tweaks.text_align_most_justify, "left")
+    eq(ui.styletweak.doc_tweaks.paragraph_indent, nil, "per-book override cleared")
+    truthy(ui.styletweak.global_tweaks["footnote-inpage_epub"], "other tweaks kept")
+    tapOn(function(a) return a.type == "size" and a.delta > 0 end)
+    eq(events[1].name, "SetFontSize")
+    tapOn(function(a) return a.type == "preset" and a.id == "airy" end)
+    eq(p.settings:readSetting("reading_layout"), "airy")
+    local before = #S.closed
+    panel:onTap(nil, { pos = { x = 5, y = 5 } }) -- above the sheet
+    truthy(#S.closed > before, "tap above the sheet closes it")
+end)
+
+test("the panel fits every screen without overlaps", function()
+    local Panel = require("sereno/reader/panel")
+    local Theme = require("sereno/ui/theme")
+    local Layout = require("sereno/home/layout")
+    local ReaderLayout = require("sereno/reader/layout")
+    for _i, scr in ipairs({ { 600, 800, 167 }, { 758, 1024, 212 }, { 1072, 1448, 300 }, { 1236, 1648, 300 }, { 1860, 2480, 300 }, { 1448, 1072, 300 } }) do
+        local screen = { width = scr[1], height = scr[2], dpi = scr[3] }
+        local t = Theme.new(screen)
+        local nodes, top = Panel.layout(t, ReaderLayout.compute(screen, "paperback"))
+        truthy(top > t.height * 0.2, scr[1] .. "x" .. scr[2] .. ": the sheet leaves the book visible (top " .. top .. ")")
+        for _j, n in ipairs(nodes) do
+            truthy(n.x >= 0 and n.y >= 0 and n.x + n.w <= t.width + 1 and n.y + n.h <= t.height + 1,
+                scr[1] .. "x" .. scr[2] .. " " .. tostring(n.id) .. " inside the screen")
+        end
+        local pages = 0
+        for _j, a in ipairs(nodes) do
+            if a.kind == "page" then
+                pages = pages + 1
+                for _k, b in ipairs(nodes) do
+                    if b ~= a and b.kind == "page" then
+                        truthy(a.x + a.w <= b.x or b.x + b.w <= a.x or a.y + a.h <= b.y or b.y + b.h <= a.y,
+                            a.id .. " overlaps " .. b.id)
+                    end
+                end
+            end
+        end
+        eq(pages, 10)
+        local _ = Layout
+    end
 end)
 
 test("the reader can use Sereno's page count as its page numbers", function()
