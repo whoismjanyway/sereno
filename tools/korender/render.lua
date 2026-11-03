@@ -364,10 +364,17 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                 { id = "bars", align = sereno.align, bars = true,
                   v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
                         b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
-                { id = "panel", align = sereno.align, panel = true,
+                { id = "panel", align = sereno.align, panel = "font",
                   v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
                         b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
             }
+            -- every tab of the Text panel, and the font list
+            for _j, extra in ipairs({ { "themes" }, { "layout" }, { "font", true } }) do
+                cases[#cases + 1] = { id = "panel-" .. extra[1] .. (extra[2] and "-list" or ""), align = sereno.align,
+                    panel = extra[1], font_list = extra[2],
+                    v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
+                          b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } }
+            end
             -- the three pages (Compact, Normal, Roomy), on the Paperwhite only
             if d.id == "paperwhite" then
                 for _j, p in ipairs(ReaderLayout.PAGES) do
@@ -410,11 +417,21 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                 end
                 if c.panel then
                     sereno.font = "Noto Serif"
-                    local panel = PanelWidget:new{ values = sereno, translate = _, fonts = {
+                    local fonts = {
                         { name = "Noto Serif", file = "fonts/noto/NotoSerif-Regular.ttf" },
                         { name = "FreeSerif", file = "fonts/freefont/FreeSerif.ttf" },
                         { name = "Noto Sans", file = "fonts/noto/NotoSans-Regular.ttf" },
-                    } }
+                        { name = "FreeSans", file = "fonts/freefont/FreeSans.ttf" },
+                    }
+                    local panel = PanelWidget:new{ values = sereno, translate = _, tab = c.panel, opts = function()
+                        return { fonts = fonts, font_file = fonts[1].file, themes = {
+                            { id = "compact", name = "Compact", spec = { page = "compact" }, builtin = true },
+                            { id = "standard", name = "Standard", spec = { page = "normal" }, builtin = true, current = true },
+                            { id = "large", name = "Large", spec = { page = "normal" }, builtin = true },
+                            { id = "u1", name = "Evening", spec = { page = "roomy" } },
+                        } }
+                    end }
+                    if c.font_list then panel.font_list = true panel:build() end
                     panel:paintTo(bb, 0, 0)
                     panel:onCloseWidget()
                 end

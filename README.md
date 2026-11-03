@@ -124,19 +124,21 @@ So the text runs almost to the bezel on every device, and changes size from one 
 
 ![KOReader's default page next to Sereno's Normal page on a 6" Kindle, a Paperwhite and a Scribe](docs/images/design/reader-margins.png)
 
-### The Text panel: font, size, page
+### The Text panel: Themes, Font, Layout
 
-Like the Kindle's *Aa* panel, and kept just as simple. Tap *Aa* in the bar at the top of a book (or *Font, size and page (Sereno)* in KOReader's typeset menu). Each tap changes one thing and the book re-flows behind the panel straight away.
+Tap *Aa* in the bar at the top of a book (or *Font, size and page (Sereno)* in KOReader's typeset menu). The panel has three tabs, like the Kindle's, and reopens on the last one you used. Each tap re-flows the book behind it straight away, and new books open the same way.
 
-| Control | What it does |
+| Tab | What's in it |
 |---|---|
-| **Font** | Up to four fonts, each written in its own typeface. Bookerly, Literata, Noto Serif and the like come first when KOReader has them. |
-| **Size** | A / A, in half-point steps, with the line length it gives. |
-| **Page** | **Compact**, **Normal** or **Roomy**: margins (5, 8 or 14 mm) and line spacing that belong together. On big screens the margins grow so lines stay readable. |
+| **Themes** | Compact, Standard and Large, and your own: *Save current settings* keeps the font, size, bold, page and alignment under a name. Hold a theme you saved to delete it. |
+| **Font** | *Font family*, written in its own typeface; tap it for a list of every font, each shown in itself. *Bold* as a bar of five boxes (KOReader's font weight). *Size* as a numbered bar of 14 boxes, with − and +. |
+| **Layout** | *Page*: Compact, Normal or Roomy (margins of 5, 8 or 14 mm with matching line spacing; on big screens the margins grow so lines stay readable). *Alignment*: justified or left. |
 
-![The Text panel on three devices](docs/images/design/reader-panel.png)
+![Themes, Font, the font list and Layout on a Kindle Paperwhite](docs/images/design/reader-panel-tabs.png)
 
-New books open with the same font, size and page. Two switches live in *Settings → Sereno → Reader*: *Justified text* and *Book-style paragraphs* (indented first lines, no blank lines between paragraphs, centred headings, hyphenation). *Back to KOReader's defaults* gives you back the settings you had before Sereno.
+**Selecting text.** Holding on text gives a short menu: *Highlight*, *Note*, *Dictionary* and *More…*, which holds everything else (copy, search, Wikipedia, translate, and buttons other plugins add). It's built with KOReader's own `addToHighlightDialog` and `removeFromHighlightDialog`; turn off *Settings → Sereno → Reader → Short selection menu* for KOReader's full list. A single word still opens KOReader's dictionary.
+
+Book-style paragraphs (indented first lines, no blank lines between paragraphs, centred headings, hyphenation) are on by default; it's a switch in *Settings → Sereno → Reader*, next to *Back to KOReader's defaults*.
 
 The three pages on a Paperwhite:
 
@@ -206,7 +208,7 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
 Covers come from KOReader's CoverBrowser cache when that plugin is on. Otherwise Sereno renders the cover image stored inside the EPUB itself, keeping at most 16 in memory. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
 
 > **Status:** 0.3, early. **It has not yet been tried on a real device.** What has been checked:
-> - **Specs:** 184 of them, run against KOReader's latest release, run on LuaJIT with stubs of KOReader's modules.
+> - **Specs:** 186 of them, run against KOReader's latest release, run on LuaJIT with stubs of KOReader's modules.
 > - **Real widget code:** the home screen is also drawn by KOReader's own code (blitbuffer, FreeType fonts, TextBoxWidget, IconWidget) on every CI run, with `tools/korender`.
 > - **Previews:** layout previews for several devices. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
 

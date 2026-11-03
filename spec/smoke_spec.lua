@@ -284,14 +284,17 @@ test("reading settings: the panel, two switches, and the way back", function()
     eq(S.global.cre_font, "My Font")
 end)
 
-test("the text panel: font, size and page, one re-flow per tap", function()
+local function panelUI()
     local ui = newUI("reader")
     ui.rolling = {}
     ui.typeset = {}
     ui.document.configurable = {}
     ui.font = { font_face = "Noto Serif" }
     local events = {}
-    ui.handleEvent = function(_self, e) events[#events + 1] = e end
+    ui.handleEvent = function(_self, e)
+        events[#events + 1] = e
+        if e.name == "SetFont" then ui.font.font_face = e.args[1] end
+    end
     package.loaded["fontlist"] = { fontinfo = {
         ["/f/NotoSerif-Regular.ttf"] = { { name = "Noto Serif" } },
         ["/f/NotoSerif-Bold.ttf"] = { { name = "Noto Serif", bold = true } },
@@ -299,64 +302,162 @@ test("the text panel: font, size and page, one re-flow per tap", function()
         ["/f/FreeSerif.ttf"] = { { name = "FreeSerif" } },
         ["/f/Odd.ttf"] = { { name = "Odd Display" } },
     } }
+    return ui, events
+end
+
+local function tapOn(panel, pred, hold)
+    for _i, n in ipairs(panel.nodes) do
+        if n.kind == "tap" and pred(n.action, n) then
+            local ges = { pos = { x = n.x + 1, y = n.y + 1 } }
+            if hold then panel:onHold(nil, ges) else panel:onTap(nil, ges) end
+            return true
+        end
+    end
+end
+
+test("the text panel: Font tab with family, Bold and Size bars", function()
+    local ui, events = panelUI()
     local p = Sereno:new{ ui = ui }
+    p.settings:delSetting("panel_tab")
     local items = {}
     p:addToMainMenu(items)
     eq(items.sereno_page.sorting_hint, "typeset")
     local fonts = p:fontChoices()
-    eq(#fonts, 3, "only fonts worth offering, one entry each")
-    eq(fonts[1].name, "Literata")
+    eq(#fonts, 4, "every regular font once")
+    eq(fonts[1].name, "Literata", "book fonts first")
+    eq(fonts[4].name, "Odd Display", "the rest after, by name")
     local panel = p:showPagePanel()
-    eq(S.shown[#S.shown], panel)
+    eq(panel.tab, "font")
     local bb = S.fakeBB()
     panel:paintTo(bb, 0, 0)
     truthy(#bb.calls > 10, "panel drew")
-    local kinds = {}
-    for _i, n in ipairs(panel.nodes) do if n.kind == "tap" then kinds[n.action.key or n.action.type] = true end end
-    truthy(kinds.font and kinds.size and kinds.page and not kinds.align and not kinds.spacing, "only font, size and page")
-    local function tapOn(pred)
-        for _i, n in ipairs(panel.nodes) do
-            if n.kind == "tap" and pred(n.action) then
-                panel:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } })
-                return true
-            end
-        end
+    local before_size = #events
+    truthy(tapOn(panel, function(a) return a.type == "level" and a.key == "pt" and a.delta == 1 end), "size +")
+    eq(events[before_size + 1].name, "SetFontSize")
+    eq(p:currentSpec().pt, 0.5)
+    tapOn(panel, function(a) return a.type == "level" and a.key == "pt" and a.value == 11 end)
+    eq(p:currentSpec().pt, 4)
+    tapOn(panel, function(a) return a.type == "level" and a.key == "weight" and a.value == 2 end)
+    eq(events[#events].name, "SetFontBaseWeight")
+    eq(p:currentSpec().weight, 1)
+    tapOn(panel, function(a) return a.type == "level" and a.key == "weight" and a.value == 2 end)
+    eq(p:currentSpec().weight, 0.5)
+    eq(S.global.copt_font_base_weight, 0.5, "new books get it too")
+    truthy(tapOn(panel, function(a) return a.type == "font_list" end), "font family row")
+    eq(panel.font_list, true)
+    local rows = 0
+    for _i, n in ipairs(panel.nodes) do
+        if n.id and n.id:match("^font_row_sample_") then rows = rows + 1 truthy(n.font_file, "sample in its font") end
     end
-    truthy(tapOn(function(a) return a.key == "page" and a.value == "roomy" end), "page option")
-    local names = {}
-    for _i, e in ipairs(events) do names[#names + 1] = e.name end
-    eq(table.concat(names, ","), "SetLineSpace,SetPageMargins", "margins and spacing together")
-    eq(p:currentSpec().page, "roomy")
-    events = {}
-    truthy(tapOn(function(a) return a.key == "font" and a.value == "Literata" end), "font option")
-    eq(events[1].name, "SetFont")
-    eq(events[1].args[1], "Literata")
+    eq(rows, 4)
+    local before = #events
+    truthy(tapOn(panel, function(a) return a.key == "font" and a.value == "Literata" end), "a font")
+    eq(events[before + 1].name, "SetFont")
     eq(S.global.cre_font, "Literata", "new books open in it too")
-    events = {}
-    tapOn(function(a) return a.type == "size" and a.delta > 0 end)
-    eq(events[1].name, "SetFontSize")
-    local before = #S.closed
+    tapOn(panel, function(a) return a.type == "tab" and a.tab == "font" end) -- back
+    eq(panel.font_list, nil)
+    local closed = #S.closed
     panel:onTap(nil, { pos = { x = 5, y = 5 } }) -- above the sheet
-    truthy(#S.closed > before, "tap above the sheet closes it")
+    truthy(#S.closed > closed, "tap above the sheet closes it")
     package.loaded["fontlist"] = nil
 end)
 
-test("the panel fits every screen without overlaps", function()
+test("the text panel: Layout tab, and Themes you can save and delete", function()
+    local ui, events = panelUI()
+    local p = Sereno:new{ ui = ui }
+    p.settings:delSetting("themes")
+    local panel = p:showPagePanel()
+    tapOn(panel, function(a) return a.type == "tab" and a.tab == "layout" end)
+    eq(p.settings:readSetting("panel_tab"), "layout", "the panel reopens on the last tab")
+    local before = #events
+    truthy(tapOn(panel, function(a) return a.key == "page" and a.value == "roomy" end), "page option")
+    local names = {}
+    for i = before + 1, #events do names[#names + 1] = events[i].name end
+    eq(table.concat(names, ","), "SetLineSpace,SetPageMargins", "margins and spacing together")
+    truthy(tapOn(panel, function(a) return a.key == "align" and a.value == "left" end), "alignment")
+    eq(p:currentSpec().align, "left")
+    tapOn(panel, function(a) return a.type == "tab" and a.tab == "themes" end)
+    truthy(tapOn(panel, function(a) return a.type == "theme" and a.id == "large" end), "Large")
+    eq(p:currentSpec().pt, 4)
+    eq(p:currentSpec().page, "normal")
+    local current
+    for _i, th in ipairs(p:themes()) do if th.current then current = th.id end end
+    eq(current, "large")
+    local id = p:saveTheme("Night reading")
+    eq(#p:themes(), 4)
+    panel:redraw()
+    local held = false
+    for _i, n in ipairs(panel.nodes) do
+        if n.kind == "tap" and n.hold_action and n.hold_action.id == id then held = true end
+    end
+    truthy(held, "your own theme can be held")
+    p:deleteTheme(id)
+    eq(#p:themes(), 3)
+    truthy(tapOn(panel, function(a) return a.type == "theme_save" end), "save button")
+    package.loaded["fontlist"] = nil
+end)
+
+test("the panel fits every screen and tab without overlaps", function()
     local Panel = require("sereno/reader/panel")
     local Theme = require("sereno/ui/theme")
     local ReaderLayout = require("sereno/reader/layout")
-    local fonts = { { name = "Literata" }, { name = "Noto Serif" }, { name = "FreeSerif" }, { name = "Noto Sans" } }
+    local fonts = {}
+    for i = 1, 12 do fonts[i] = { name = "Font " .. i } end
+    local themes = { { id = "compact", name = "Compact", spec = { page = "compact" }, builtin = true },
+        { id = "standard", name = "Standard", spec = { page = "normal" }, builtin = true, current = true },
+        { id = "large", name = "Large", spec = { page = "normal" }, builtin = true },
+        { id = "u1", name = "Night reading", spec = { page = "roomy" } } }
     for _i, scr in ipairs({ { 600, 800, 167 }, { 758, 1024, 212 }, { 1072, 1448, 300 }, { 1236, 1648, 300 }, { 1860, 2480, 300 }, { 1448, 1072, 300 } }) do
         local screen = { width = scr[1], height = scr[2], dpi = scr[3] }
         local t = Theme.new(screen)
-        local nodes, top = Panel.layout(t, ReaderLayout.compute(screen, "normal"), nil, fonts)
-        truthy(top > t.height * 0.25, scr[1] .. "x" .. scr[2] .. ": the sheet leaves the book visible (top " .. top .. ")")
-        local problems = require("sereno/home/layout").check(t, nodes)
-        eq(#problems, 0, table.concat(problems, "; "))
-        local pages = 0
-        for _j, a in ipairs(nodes) do if a.kind == "page" then pages = pages + 1 end end
-        eq(pages, 3)
+        local values = ReaderLayout.compute(screen, "normal")
+        values.font = "Font 1"
+        for _j, opts in ipairs({ { tab = "themes" }, { tab = "font" }, { tab = "font", font_list = true }, { tab = "layout" } }) do
+            opts.fonts, opts.themes = fonts, themes
+            local nodes, top = Panel.layout(t, values, nil, opts)
+            local name = scr[1] .. "x" .. scr[2] .. " " .. opts.tab .. (opts.font_list and " list" or "")
+            truthy(top > t.height * 0.25, name .. ": the sheet leaves the book visible (top " .. top .. ")")
+            local problems = require("sereno/home/layout").check(t, nodes)
+            eq(#problems, 0, name .. ": " .. table.concat(problems, "; "))
+        end
     end
+end)
+
+test("a short selection menu, through KOReader's public hooks", function()
+    local ui = newUI("reader")
+    local buttons = {}
+    for _i, id in ipairs({ "01_select", "02_highlight", "03_copy", "04_add_note", "05_wikipedia", "06_dictionary",
+        "07_translate", "12_search", "15_other_plugin" }) do
+        buttons[id] = function() return { text = id, callback = function() end } end
+    end
+    ui.highlight = {
+        _highlight_buttons = buttons,
+        addToHighlightDialog = function(self, id, fn) self._highlight_buttons[id] = fn end,
+        removeFromHighlightDialog = function(self, id) local f = self._highlight_buttons[id] self._highlight_buttons[id] = nil return f end,
+    }
+    local p = Sereno:new{ ui = ui }
+    p.settings:delSetting("short_selection_menu")
+    truthy(p:applySelectionMenu())
+    local left = {}
+    for id in pairs(buttons) do left[#left + 1] = id end
+    table.sort(left)
+    eq(table.concat(left, ","), "02_highlight,04_add_note,06_dictionary,99_sereno_more")
+    local more = buttons["99_sereno_more"](ui.highlight)
+    eq(more.text, "More…")
+    more.callback()
+    local dialog = S.shown[#S.shown]
+    local texts = {}
+    for _i, row in ipairs(dialog.buttons) do for _j, b in ipairs(row) do texts[#texts + 1] = b.text end end
+    eq(#texts, 6)
+    truthy(H.contains(texts, "15_other_plugin") and H.contains(texts, "03_copy"), table.concat(texts, ","))
+    eq(ui.highlight.highlight_dialog, dialog, "KOReader's buttons close it when done")
+    p.settings:saveSetting("short_selection_menu", false)
+    p:applySelectionMenu()
+    local n = 0
+    for _id in pairs(buttons) do n = n + 1 end
+    eq(n, 9)
+    eq(buttons["99_sereno_more"], nil)
+    p.settings:delSetting("short_selection_menu")
 end)
 
 test("EPUBs are read the way KOReader's archive reader needs (iterate first)", function()

@@ -119,6 +119,11 @@ stub("ffi/blitbuffer", { COLOR_BLACK = "black", COLOR_WHITE = "white", COLOR_GRA
         return bb
     end,
 })
+stub("ui/widget/inputdialog", { new = function(_, o)
+    o.getInputText = function() return o.input or "" end
+    o.onShowKeyboard = function() end
+    return o
+end })
 S.touchmenus = {}
 stub("ui/widget/touchmenu", { new = function(_, o)
     S.touchmenus[#S.touchmenus + 1] = o

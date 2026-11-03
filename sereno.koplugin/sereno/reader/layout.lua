@@ -67,6 +67,44 @@ ReaderLayout.PAGES = {
     { id = "roomy", name = "Roomy", spacing = "loose", margins = "wide" },
 }
 
+-- Size, as the panel's numbered bar: offsets in points from the base size
+ReaderLayout.SIZE_LEVELS = { -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8 }
+-- Bold, as the panel's bar: KOReader's font weight (0 = the font as drawn)
+ReaderLayout.WEIGHTS = { 0, 0.5, 1, 1.5, 2, 3 }
+
+-- Themes: a size and a page, ready to pick; people save their own too
+ReaderLayout.THEMES = {
+    { id = "compact", name = "Compact", spec = { pt = -0.5, page = "compact" } },
+    { id = "standard", name = "Standard", spec = { pt = 0, page = "normal" } },
+    { id = "large", name = "Large", spec = { pt = 4, page = "normal" } },
+}
+
+--- Index in SIZE_LEVELS closest to `pt`.
+function ReaderLayout.sizeLevel(pt)
+    local best, diff = 1, math.huge
+    for i, v in ipairs(ReaderLayout.SIZE_LEVELS) do
+        if math.abs(v - (pt or 0)) < diff then best, diff = i, math.abs(v - (pt or 0)) end
+    end
+    return best
+end
+
+--- Index in WEIGHTS closest to `w`.
+function ReaderLayout.weightLevel(w)
+    local best, diff = 1, math.huge
+    for i, v in ipairs(ReaderLayout.WEIGHTS) do
+        if math.abs(v - (w or 0)) < diff then best, diff = i, math.abs(v - (w or 0)) end
+    end
+    return best
+end
+
+--- Whether `spec` is what `theme` sets (a theme only sets what it names).
+function ReaderLayout.themeMatches(theme, spec)
+    for k, v in pairs(theme.spec) do
+        if spec[k] ~= v then return false end
+    end
+    return true
+end
+
 -- names of earlier versions' presets
 local LEGACY = { paperback = { page = "normal" }, airy = { page = "roomy", pt = 0.5 }, large = { page = "normal", pt = 4 } }
 
@@ -115,6 +153,7 @@ function ReaderLayout.spec(p)
         pt = p.pt or 0,
         page = page,
         font = p.font,
+        weight = p.weight or 0,
         align = (p.align == "left") and "left" or "justify",
         book_style = p.book_style ~= false,
     }
@@ -207,6 +246,7 @@ function ReaderLayout.compute(screen, preset_or_spec)
         line_spacing = spacing.line_spacing,
         preset = spec.page,
         font = spec.font,
+        weight = spec.weight or 0,
         spec = spec,
         align = spec.align,
         book_style = spec.book_style,
@@ -228,7 +268,8 @@ function ReaderLayout.with(spec, key, value)
     return s
 end
 
-ReaderLayout.SETTING_KEYS = { "copt_font_size", "copt_h_page_margins", "copt_t_page_margin", "copt_b_page_margin", "copt_line_spacing" }
+ReaderLayout.SETTING_KEYS = { "copt_font_size", "copt_h_page_margins", "copt_t_page_margin", "copt_b_page_margin",
+    "copt_line_spacing", "copt_font_base_weight" }
 
 --- The settings keys KOReader reads as defaults for new books (G_reader_settings).
 function ReaderLayout.defaultSettings(values)
@@ -238,6 +279,7 @@ function ReaderLayout.defaultSettings(values)
         copt_t_page_margin = values.t_margin,
         copt_b_page_margin = values.b_margin,
         copt_line_spacing = values.line_spacing,
+        copt_font_base_weight = values.weight or 0,
     }
 end
 

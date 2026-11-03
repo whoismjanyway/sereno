@@ -16,6 +16,10 @@
 - **"Page numbers can only be set for reflowable books" on EPUBs.** The function Sereno used exists only in KOReader's development version. On releases, Sereno now builds the page map itself through KOReader's "characters per page", searching for the value that gives the book exactly its page count.
 - **Tests and CI now run against KOReader's latest release**, not its development version, with a check that every KOReader function Sereno calls exists there.
 
+### Added (0.3)
+- **Text panel in three tabs, like the Kindle's:** *Themes* (Compact, Standard, Large, and your own saved settings; hold to delete), *Font* (font family written in its own typeface, with a list of every font; *Bold* bar over KOReader's font weight; numbered *Size* bar) and *Layout* (page and alignment). It reopens on the last tab.
+- **Short selection menu:** Highlight, Note, Dictionary and More… (everything else, other plugins' buttons included), through KOReader's public highlight-dialog hooks. One switch brings back KOReader's full list.
+
 ### Changed
 - **Simpler page counts menu:** pages or locations, *Count pages* (one submenu for the method), reading speed, and this book's numbers. Stable page numbers are always on and applied when a book opens (again if you change the method), so the two switches for them are gone.
 - **Simpler Text panel:** Font (up to four, each written in its own typeface), Size and Page (Compact, Normal, Roomy). Alignment and paragraph style moved to Settings as two switches; the four 0.2 presets are gone (earlier settings carry over).

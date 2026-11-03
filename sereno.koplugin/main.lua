@@ -457,6 +457,16 @@ function Sereno:getSettingsTab()
                         self.settings:flush()
                     end,
                 }
+                items[#items + 1] = {
+                    text = _("Short selection menu"),
+                    help_text = _("When you select text: Highlight, Note, Dictionary and More…, instead of KOReader's full list."),
+                    checked_func = function() return self.settings:nilOrTrue("short_selection_menu") end,
+                    callback = function()
+                        self.settings:saveSetting("short_selection_menu", not self.settings:nilOrTrue("short_selection_menu"))
+                        self.settings:flush()
+                        if self.ui.document then self:applySelectionMenu() end
+                    end,
+                }
                 items[#items + 1] = { text = _("Page counts"), sub_item_table_func = function() return self:getPagesMenu() end }
                 return items
             end,
@@ -1225,7 +1235,74 @@ function Sereno:setSyntheticPages(pm, pages)
     UIManager:setDirty(self.ui.view and self.ui.view.dialog or "all", "partial")
 end
 
+--- The text selection menu
+
+-- what stays in the short menu (KOReader's own buttons)
+Sereno.SELECTION_KEEP = { ["02_highlight"] = true, ["04_add_note"] = true, ["06_dictionary"] = true }
+
+--[[--
+A short selection menu, like the Kindle's: Highlight, Note, Dictionary and
+"More…", which shows every other button (copy, search, Wikipedia,
+translate, and whatever other plugins added). Done through KOReader's
+public addToHighlightDialog / removeFromHighlightDialog, and undone the
+same way when the setting is turned off.
+]]
+function Sereno:applySelectionMenu()
+    local hl = self.ui.highlight
+    if not (hl and hl.addToHighlightDialog and hl.removeFromHighlightDialog) then return false end
+    if self.settings:nilOrTrue("short_selection_menu") then
+        if self.removed_buttons then return true end
+        self.removed_buttons = {}
+        local ids = {}
+        for id in pairs(hl._highlight_buttons or {}) do ids[#ids + 1] = id end
+        table.sort(ids)
+        for _i, id in ipairs(ids) do
+            if not Sereno.SELECTION_KEEP[id] then
+                local fn = hl:removeFromHighlightDialog(id)
+                if fn then self.removed_buttons[#self.removed_buttons + 1] = { id = id, fn = fn } end
+            end
+        end
+        hl:addToHighlightDialog("99_sereno_more", function(this, index)
+            return {
+                text = _("More…"),
+                callback = function()
+                    if this.highlight_dialog then UIManager:close(this.highlight_dialog) end
+                    self:showMoreSelection(this, index)
+                end,
+            }
+        end)
+    elseif self.removed_buttons then
+        hl:removeFromHighlightDialog("99_sereno_more")
+        for _i, b in ipairs(self.removed_buttons) do hl:addToHighlightDialog(b.id, b.fn) end
+        self.removed_buttons = nil
+    end
+    return true
+end
+
+--- The rest of KOReader's selection buttons, two to a row as KOReader shows them.
+function Sereno:showMoreSelection(hl, index)
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local rows, row = {}, {}
+    for _i, b in ipairs(self.removed_buttons or {}) do
+        local button = b.fn(hl, index)
+        if button and (not button.show_in_highlight_dialog_func or button.show_in_highlight_dialog_func()) then
+            row[#row + 1] = button
+            if #row == 2 then rows[#rows + 1], row = row, {} end
+        end
+    end
+    if #row > 0 then rows[#rows + 1] = row end
+    local dialog = ButtonDialog:new{
+        buttons = rows,
+        tap_close_callback = function() if hl.hold_pos then hl:clear() end end,
+    }
+    -- KOReader's buttons close "the highlight dialog" when done: this one
+    hl.highlight_dialog = dialog
+    UIManager:show(dialog)
+    return dialog
+end
+
 function Sereno:onReaderReady()
+    pcall(self.applySelectionMenu, self)
     if self:isSleepScreenOn() then
         UIManager:scheduleIn(3, function() if self.ui.document then self:renderSleepImage() end end)
     end
@@ -1284,6 +1361,10 @@ function Sereno:applyReadingLayout(values, changed)
     end
     if all or changed == "pt" then
         self.ui:handleEvent(Event:new("SetFontSize", values.font_size))
+    end
+    if (all and (values.weight or 0) ~= 0) or changed == "weight" then
+        cfg.font_base_weight = values.weight or 0
+        self.ui:handleEvent(Event:new("SetFontBaseWeight", values.weight or 0))
     end
     if all or changed == "page" then
         self.ui:handleEvent(Event:new("SetLineSpace", values.line_spacing))
@@ -1394,20 +1475,124 @@ function Sereno:setDefaultReadingLayout(values)
 end
 
 --- One tap in the panel: the new spec, applied to the book and saved.
-function Sereno:onPanelAction(action)
+function Sereno:onPanelAction(action, panel)
     local spec = self:currentSpec()
     local changed
     if action.type == "size" then
         spec = ReaderLayout.with(spec, "pt", spec.pt + action.delta)
         changed = "pt"
+    elseif action.type == "level" then
+        -- the Bold and Size bars: a box tapped (value) or − / + (delta)
+        local levels = action.key == "weight" and ReaderLayout.WEIGHTS or ReaderLayout.SIZE_LEVELS
+        local now = action.key == "weight" and ReaderLayout.weightLevel(spec.weight) or ReaderLayout.sizeLevel(spec.pt)
+        -- the Bold bar's boxes are levels 2..6 (level 1 = regular, no box filled)
+        local idx = action.value and (action.key == "weight" and action.value + 1 or action.value) or (now + action.delta)
+        if action.key == "weight" and action.value and idx == now then idx = idx - 1 end -- tapping the last box clears it
+        idx = math.max(1, math.min(#levels, idx))
+        if idx == now then return nil end
+        spec = ReaderLayout.with(spec, action.key, levels[idx])
+        changed = action.key
     elseif action.type == "set" then
         spec = ReaderLayout.with(spec, action.key, action.value)
         changed = action.key
+    elseif action.type == "theme" then
+        local theme = self:findTheme(action.id)
+        if not theme then return nil end
+        for k, v in pairs(theme.spec) do spec[k] = v end
+        spec = ReaderLayout.spec(spec)
+        changed = nil
+    elseif action.type == "theme_save" then
+        self:saveThemeDialog(panel)
+        return nil
+    elseif action.type == "theme_delete" then
+        self:deleteThemeDialog(action.id, panel)
+        return nil
+    else
+        return nil
     end
     local values = ReaderLayout.compute(self:readerScreen(), spec)
     if self.ui.document then self:applyReadingLayout(values, changed) end
     self:setDefaultReadingLayout(values)
+    values.font = values.font or (self.ui.font and self.ui.font.font_face)
     return values
+end
+
+--- Themes: the built-in ones, then the ones you saved.
+function Sereno:themes()
+    local list = {}
+    for _i, th in ipairs(ReaderLayout.THEMES) do
+        list[#list + 1] = { id = th.id, name = th.name, spec = th.spec, builtin = true }
+    end
+    for _i, th in ipairs(self.settings:readSetting("themes") or {}) do
+        list[#list + 1] = { id = th.id, name = th.name, spec = th.spec }
+    end
+    local spec = self:currentSpec()
+    -- one "current" at most: your own themes are more specific, so they win
+    for i = #list, 1, -1 do
+        if ReaderLayout.themeMatches(list[i], spec) then list[i].current = true break end
+    end
+    return list
+end
+
+function Sereno:findTheme(id)
+    for _i, th in ipairs(self:themes()) do if th.id == id then return th end end
+end
+
+function Sereno:saveThemeDialog(panel)
+    local InputDialog = require("ui/widget/inputdialog")
+    local dialog
+    dialog = InputDialog:new{
+        title = _("Save current settings"),
+        input_hint = _("Theme name"),
+        buttons = { {
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+            { text = _("Save"), is_enter_default = true, callback = function()
+                local name = dialog:getInputText()
+                UIManager:close(dialog)
+                if name and name:match("%S") then
+                    self:saveTheme(name)
+                    if panel then panel:redraw() end
+                end
+            end },
+        } },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+--- Saves the current font, size, bold, page and alignment as a theme.
+function Sereno:saveTheme(name)
+    local spec = self:currentSpec()
+    spec.font = spec.font or (self.ui.font and self.ui.font.font_face)
+    local themes = self.settings:readSetting("themes") or {}
+    local id = "user_" .. os.time() .. "_" .. #themes
+    themes[#themes + 1] = { id = id, name = name, spec = spec }
+    self.settings:saveSetting("themes", themes)
+    self.settings:flush()
+    return id
+end
+
+function Sereno:deleteThemeDialog(id, panel)
+    local theme = self:findTheme(id)
+    if not theme or theme.builtin then return end
+    local ConfirmBox = require("ui/widget/confirmbox")
+    UIManager:show(ConfirmBox:new{
+        text = T(_("Delete the theme \"%1\"?"), theme.name),
+        ok_text = _("Delete"),
+        ok_callback = function()
+            self:deleteTheme(id)
+            if panel then panel:redraw() end
+        end,
+    })
+end
+
+function Sereno:deleteTheme(id)
+    local themes = {}
+    for _i, th in ipairs(self.settings:readSetting("themes") or {}) do
+        if th.id ~= id then themes[#themes + 1] = th end
+    end
+    self.settings:saveSetting("themes", themes)
+    self.settings:flush()
 end
 
 -- Fonts worth offering first, when KOReader has them (system fonts on a
@@ -1415,7 +1600,7 @@ end
 Sereno.PREFERRED_FONTS = { "Bookerly", "Literata", "Noto Serif", "Gentium Book Plus", "Charis SIL", "Caecilia",
     "Georgia", "FreeSerif", "Noto Sans", "Open Sans" }
 
---- Up to four { name, file } font choices for the panel.
+--- Every font KOReader has, { name, file }, the usual book fonts first.
 function Sereno:fontChoices()
     local ok, FontList = pcall(require, "fontlist")
     if not ok or not FontList then return {} end
@@ -1425,25 +1610,22 @@ function Sereno:fontChoices()
         local fi = info[1]
         if fi and fi.name and not fi.bold and not fi.italic and not files[fi.name] then files[fi.name] = path end
     end
-    local current = self.ui.font and self.ui.font.font_face or self:currentSpec().font
-    local out, seen = {}, {}
-    local function add(name)
-        if name and files[name] and not seen[name] and #out < 4 then
-            out[#out + 1] = { name = name, file = files[name] }
-            seen[name] = true
-        end
+    local function rank(n)
+        for i, v in ipairs(Sereno.PREFERRED_FONTS) do if v == n then return i end end
+        return #Sereno.PREFERRED_FONTS + 1
     end
-    add(current)
-    for _i, name in ipairs(Sereno.PREFERRED_FONTS) do add(name) end
-    -- keep the current font first only if it isn't among the usual ones
+    local out = {}
+    for name, path in pairs(files) do out[#out + 1] = { name = name, file = path } end
     table.sort(out, function(a, b)
-        local function rank(n) for i, v in ipairs(Sereno.PREFERRED_FONTS) do if v == n then return i end end return 0 end
-        return rank(a.name) < rank(b.name)
+        local ra, rb = rank(a.name), rank(b.name)
+        if ra ~= rb then return ra < rb end
+        return a.name:lower() < b.name:lower()
     end)
-    return out, current
+    local current = self.ui.font and self.ui.font.font_face or self:currentSpec().font
+    return out, current, files[current or ""]
 end
 
---- The "Text" panel, like the Kindle's "Aa" panel: font, size, page.
+--- The "Text" panel, like the Kindle's "Aa" panel: Themes, Font, Layout.
 function Sereno:showPagePanel()
     if not (self.ui.document and self.ui.rolling) then
         UIManager:show(InfoMessage:new{ text = _("Reading layouts apply to reflowable books (EPUB, FB2, MOBI…), not to PDF or comics.") })
@@ -1454,13 +1636,16 @@ function Sereno:showPagePanel()
     values.font = values.font or current
     local panel = PanelWidget:new{
         values = values,
-        fonts = fonts,
+        tab = self.settings:readSetting("panel_tab", "font"),
         translate = _,
-        on_action = function(action)
-            local v = self:onPanelAction(action)
-            v.font = v.font or current
-            return v
+        opts = function()
+            local file
+            local now = self.ui.font and self.ui.font.font_face or current
+            for _i, f in ipairs(fonts) do if f.name == now then file = f.file end end
+            return { fonts = fonts, font_file = file, themes = self:themes() }
         end,
+        on_tab = function(tab) self.settings:saveSetting("panel_tab", tab) end,
+        on_action = function(action, p) return self:onPanelAction(action, p) end,
     }
     UIManager:show(panel)
     return panel

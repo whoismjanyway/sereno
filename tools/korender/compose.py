@@ -141,4 +141,14 @@ for dev, name, _dpi in DEVICES:
         out.paste(r, (50, 50))
         out.save(os.path.join(dst, f"settings-{dev}.png"), optimize=True)
 
+# the Text panel's tabs on the Paperwhite: Themes, Font, the font list, Layout
+shots = [("reader-paperwhite-panel-themes.png", "Themes"), ("reader-paperwhite-panel.png", "Font"),
+         ("reader-paperwhite-panel-font-list.png", "Font family"), ("reader-paperwhite-panel-layout.png", "Layout")]
+tiles = [framed(os.path.join(src, f), label, "Kindle Paperwhite") for f, label in shots if os.path.exists(os.path.join(src, f))]
+if len(tiles) == len(shots):
+    r = row(tiles)
+    out = Image.new("RGB", (r.width + 100, r.height + 100), BG)
+    out.paste(r, (50, 50))
+    out.save(os.path.join(dst, "reader-panel-tabs.png"), optimize=True)
+
 print("composed into", dst)

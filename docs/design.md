@@ -66,7 +66,7 @@ Values are converted back to KOReader's units for the screen at hand, and applie
 
 ![KOReader's default page vs Sereno's Normal page](images/design/reader-margins.png)
 
-The *Text* panel (`sereno/reader/panel.lua`) is a bottom sheet that leaves most of the page in view while it re-flows: Font, Size and Page, nothing else. Each page choice is drawn as a miniature page with the real proportions of that option; the selected one gets a heavy border, like the Kindle's. In landscape, Size and Page share a row.
+The *Text* panel (`sereno/reader/panel.lua`) is a bottom sheet in three tabs that leaves most of the page in view while it re-flows. *Themes* are named combinations (Compact, Standard, Large, and the reader's own). *Font* shows the family in its own typeface, Bold as five boxes and Size as fourteen numbered boxes, so a level can be seen and reached in one tap. *Layout* holds the page and the alignment. Each page choice is drawn as a miniature page with the real proportions of that option; the selected one gets a heavy border, like the Kindle's. In landscape, Size and Page share a row.
 
 ![The Text panel](images/design/reader-panel.png)
 
