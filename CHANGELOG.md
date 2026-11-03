@@ -1,30 +1,37 @@
 # Changelog
 
+## 0.4.0 (2026-11-03)
+
+### Added
+- **Text panel in three tabs, like the Kindle's:** *Themes* (Compact, Standard, Large, and your own saved settings; hold to delete), *Font* (font family written in its own typeface, with a list of every font; *Bold* bar over KOReader's font weight; numbered *Size* bar) and *Layout* (page and alignment). It reopens on the last tab, and new books open with the same settings.
+- **Short selection menu:** Highlight, Note, Dictionary and More… (everything else, other plugins' buttons included), through KOReader's public highlight-dialog hooks. One switch brings back KOReader's full list.
+- **Kindle-style locations:** *Page counts → Show locations* shows "Location 452 of 3,400" (one per 128 characters of text) on the home screen, in the bars and on the sleep screen.
+
+### Fixed (from testing on a Kindle)
+- **"Could not count this book: no META-INF/container.xml" on every EPUB.** KOReader's archive reader only finds files after walking through the archive once; Sereno asked for them straight away. EPUBs are now read the way KOReader's own code reads them (`sereno/archive.lua`), with the device's `unzip` as a fallback. Covers without CoverBrowser had the same problem and are fixed too.
+- **"Page numbers can only be set for reflowable books" on EPUBs.** The function Sereno used exists only in KOReader's development version. On releases, Sereno now builds the page map itself through KOReader's "characters per page", searching for the value that gives the book exactly its page count.
+- **Home from a book no longer quits to the Kindle's own home screen.** When KOReader was started straight into a book, closing the reader left nothing open and KOReader quit. Sereno now leaves the book the way KOReader's own Home does, which opens the file manager and so Sereno's home screen.
+- **Rotation:** the home screen redoes its layout for the new shape.
+- **Chapter arrows:** the *previous chapter* arrow is dimmed at the first chapter (the *next* one was dimmed by mistake).
+
+### Changed
+- **Page numbers that don't move, on by default:** the reader's numbers come from KOReader's character-based page map, tuned to Sereno's page count, so they stay the same whatever the font, size or margins.
+- **Simpler page counts menu:** pages or locations, *Count pages* (one submenu for the method), reading speed, and this book's numbers. The two switches for page numbers are gone: they are always on, applied when a book opens and again if you change the method.
+- **Simpler reading settings:** the four 0.2 presets are replaced by the panel's themes and three pages (Compact, Normal, Roomy). Earlier settings carry over. *Justified text* and *Book-style paragraphs* are switches in Settings, next to *Back to KOReader's defaults*.
+- **Tests and CI run against KOReader's latest release**, not its development version, with a check that every KOReader function Sereno calls exists there.
+
 ## 0.3.0 (2026-11-02)
 
 ### Added
 - **A complete shell:** the tab bar's Library, Reading, Collections and Search open Sereno screens instead of KOReader's file browser. The Library shows folders as tiles and books as covers, with a page of covers per screen (swipe to turn) and sorting by title, author or date. Reading lists books in progress first. Collections show KOReader's collections and Favorites. Search looks through titles, authors and file names.
-- **Quick controls:** swipe down from the top edge (home, library or book) for Wi-Fi, night mode, the light, rotation, restart and sleep, brightness and warmth sliders, and buttons to KOReader's menu and file browser.
-- **Bars in the book:** a tap at the top or bottom of a page shows a toolbar (Home, Text & page, contents, bookmarks, search, KOReader's menu) and a bottom bar with the chapter, the page in Sereno's numbers, a progress slider with chapter marks, chapter skips and *Back to page …* after a jump. Registered as touch zones before KOReader's own menu zones; one setting turns it off.
+- **Quick controls:** swipe down from the top edge (home, library or book) for Wi-Fi, night mode, the light, rotation, restart and sleep, brightness and warmth sliders, and buttons to Settings and KOReader's file browser.
+- **Bars in the book:** a tap at the top or bottom of a page shows a toolbar (Home, text settings, contents, bookmarks, search, settings) and a bottom bar with the chapter, the page in Sereno's numbers, a progress slider with chapter marks, chapter skips and *Back to page …* after a jump. Registered as touch zones before KOReader's own menu zones; one setting turns it off.
 - **One settings screen:** Sereno's tab (with its mark) first, then KOReader's own menu tabs, unchanged. Opened from the quick controls (*Settings*), ⋮ in a book, a gesture, or Settings → Sereno.
 - **Sleep screen:** Sereno's sheets close and its clock stops before sleep, and the screen is redrawn in full on wake, so KOReader's sleep screens show cleanly. A new optional *Sereno: cover and progress* sleep screen uses KOReader's own folder mode and restores the previous choice when turned off. KOReader's sleep screen menu is reachable from Sereno's settings.
 - **Logo:** an open book drawn in one stroke, used as the settings tab icon, on the sleep screen and in the README.
 - **Shared painter** (`sereno/ui/painter.lua`) for every Sereno screen, with drawn symbols for what KOReader's icon set lacks.
 
-### Fixed (from testing on a Kindle)
-- **"Could not count this book: no META-INF/container.xml" on every EPUB.** KOReader's archive reader only finds files after walking through the archive once; Sereno asked for them straight away. EPUBs are now read the way KOReader's own code reads them (`sereno/archive.lua`), with the device's `unzip` as a fallback. Covers without CoverBrowser had the same problem and are fixed too.
-- **"Page numbers can only be set for reflowable books" on EPUBs.** The function Sereno used exists only in KOReader's development version. On releases, Sereno now builds the page map itself through KOReader's "characters per page", searching for the value that gives the book exactly its page count.
-- **Tests and CI now run against KOReader's latest release**, not its development version, with a check that every KOReader function Sereno calls exists there.
-
-### Added (0.3)
-- **Text panel in three tabs, like the Kindle's:** *Themes* (Compact, Standard, Large, and your own saved settings; hold to delete), *Font* (font family written in its own typeface, with a list of every font; *Bold* bar over KOReader's font weight; numbered *Size* bar) and *Layout* (page and alignment). It reopens on the last tab.
-- **Short selection menu:** Highlight, Note, Dictionary and More… (everything else, other plugins' buttons included), through KOReader's public highlight-dialog hooks. One switch brings back KOReader's full list.
-
 ### Changed
-- **Simpler page counts menu:** pages or locations, *Count pages* (one submenu for the method), reading speed, and this book's numbers. Stable page numbers are always on and applied when a book opens (again if you change the method), so the two switches for them are gone.
-- **Simpler Text panel:** Font (up to four, each written in its own typeface), Size and Page (Compact, Normal, Roomy). Alignment and paragraph style moved to Settings as two switches; the four 0.2 presets are gone (earlier settings carry over).
-- **Page numbers that don't move are on by default:** the reader's numbers come from KOReader's character-based page map, tuned to Sereno's page count, so they stay the same whatever the font, size or margins.
-- **Kindle-style locations:** *Page counts → Show locations* shows "Location 452 of 3,400" (one per 128 characters of text) on the home screen, in the bars and on the sleep screen.
 - The home screen now opens at start-up by default.
 - The *History* tab is now *Reading*.
 - Background counting redraws the home screen reliably, even when a cover lookup counted a book first.
@@ -58,11 +65,6 @@
 - **Settings:** page count method and reading speed.
 - **Languages:** Spanish translation.
 - **Development:** CI running all specs on LuaJIT, and layout previews for several devices.
-
-### Fixed (0.3)
-- **Home from a book no longer quits to the Kindle's own home screen.** When KOReader was started straight into a book, closing the reader left nothing open and KOReader quit. Sereno now leaves the book the way KOReader's own Home does, which opens the file manager and so Sereno's home screen.
-- **Rotation:** the home screen redoes its layout for the new shape.
-- **Chapter arrows:** the *previous chapter* arrow is dimmed at the first chapter (the *next* one was dimmed by mistake).
 
 ### Changed
 - **Readable reader margins:** Paperback now has 8 mm side margins (was 6 mm) and a 1.5 line height (was about 1.3), Airy 14 mm. The line height now follows crengine's real line height (1.36 em for 100 % in Noto Serif), and the line-length cap uses Noto Serif's measured width (0.52 em a character).

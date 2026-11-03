@@ -207,7 +207,7 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
 
 Covers come from KOReader's CoverBrowser cache when that plugin is on. Otherwise Sereno renders the cover image stored inside the EPUB itself, keeping at most 16 in memory. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
 
-> **Status:** 0.3, early. **It has not yet been tried on a real device.** What has been checked:
+> **Status:** 0.4, early. **It has not yet been tried on a real device.** What has been checked:
 > - **Specs:** 186 of them, run against KOReader's latest release, run on LuaJIT with stubs of KOReader's modules.
 > - **Real widget code:** the home screen is also drawn by KOReader's own code (blitbuffer, FreeType fonts, TextBoxWidget, IconWidget) on every CI run, with `tools/korender`.
 > - **Previews:** layout previews for several devices. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
