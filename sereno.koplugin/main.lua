@@ -123,9 +123,51 @@ function Sereno:init()
         session.home_shown_at_boot = true
         session.home_after_reader = false
         if at_boot or after_reader then
-            UIManager:nextTick(function() self:showHome() end)
+            -- Shown from onShow, inside KOReader's own UIManager:show of the file
+            -- manager, so the file manager is never painted first. The next tick
+            -- is only a fallback, in case Show didn't reach us.
+            self.pending_home = true
+            UIManager:nextTick(function()
+                if self.pending_home then
+                    self.pending_home = nil
+                    self:showHome()
+                end
+            end)
         end
     end
+end
+
+function Sereno:onShow()
+    if self.pending_home and not self.ui.document then
+        self.pending_home = nil
+        self:showHome()
+    end
+end
+
+--[[--
+The file manager closed: when KOReader exits (KOReader quits once no window
+is left), or when a book opens. Sereno's own windows go with it, so Exit
+really leaves KOReader for the Kindle's home screen.
+]]
+function Sereno:onCloseWidget()
+    if self.ui.document then return end
+    self.pending_home = nil
+    for _i, key in ipairs({ "controls", "chrome", "settings" }) do
+        if session[key] then
+            UIManager:close(session[key])
+            session[key] = nil
+        end
+    end
+    if session.home then
+        UIManager:close(session.home)
+        session.home = nil
+    end
+end
+
+--- Leaves KOReader, back to the Kindle's (or Kobo's) own home screen.
+function Sereno:exitKOReader()
+    self:closeHome()
+    UIManager:broadcastEvent(Event:new("Exit"))
 end
 
 function Sereno:isEnabled()
@@ -770,7 +812,7 @@ end
 function Sereno:controlsCopy()
     return {
         wifi = _("Wi-Fi"), night = _("Night"), light = _("Light"), rotate = _("Rotate"),
-        restart = _("Restart"), sleep = _("Sleep"),
+        restart = _("Restart"), sleep = _("Sleep"), exit = _("Exit"),
         wifi_on = _("Wi-Fi on"), wifi_off = _("Wi-Fi off"),
         brightness = _("Brightness: %d"), warmth = _("Warmth: %d"),
         koreader_menu = _("Settings"), files = _("File browser"),
@@ -805,6 +847,8 @@ function Sereno:onControlsAction(action, ges, overlay)
             later(function() UIManager:broadcastEvent(Event:new("Restart")) end)
         elseif id == "sleep" then
             later(function() UIManager:broadcastEvent(Event:new("RequestSuspend")) end)
+        elseif id == "exit" then
+            later(function() self:exitKOReader() end)
         end
         return false
     elseif action.type == "seek" or action.type == "step" then

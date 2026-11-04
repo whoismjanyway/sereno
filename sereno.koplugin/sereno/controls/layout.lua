@@ -39,6 +39,8 @@ function ControlsLayout.buttons(state, copy)
     if state.can_rotate ~= false then add("rotate", copy.rotate, "icon", "appbar.rotation", false) end
     if state.can_restart ~= false then add("restart", copy.restart, "glyph", "restart", false) end
     if state.can_sleep ~= false then add("sleep", copy.sleep, "glyph", "power", false) end
+    -- out of KOReader, to the e-reader's own home screen
+    add("exit", copy.exit, "icon", "exit", false)
     return list
 end
 

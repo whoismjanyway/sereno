@@ -59,6 +59,7 @@ return {
         "Mientras el dispositivo duerme, muestra el libro que estás leyendo: su portada, título y cuánto llevas. Usa la pantalla de reposo de KOReader (imagen aleatoria de la carpeta de Sereno), así que al desactivarla vuelve tu elección anterior.",
     ["%1 locations"] = "%1 posiciones",
     ["Page style"] = "Estilo de página",
+    ["Exit"] = "Salir",
     ["Status bar"] = "Barra de estado",
     ["Count pages: %1"] = "Contar páginas: %1",
     ["Back to KOReader's defaults"] = "Volver a los valores de KOReader",

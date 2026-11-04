@@ -7,6 +7,10 @@
 - **Stats tab:** from KOReader's own Reading statistics: the book you're reading (days of reading, time read, progress, time left at your own pace), pages a day and time a day over the last week, days in a row, today's pages and time, the last seven days as bars, and all-time totals. Read-only; Sereno never writes to KOReader's database.
 - **Import tab:** books from calibre over Wi-Fi (KOReader's calibre plugin), online catalogs (KOReader's OPDS browser: Project Gutenberg, Standard Ebooks, your calibre content server, catalogs you add), calibre metadata search, and where to copy books with a cable.
 
+### Fixed (from testing 0.4 on a Kindle)
+- **Exit didn't leave KOReader.** KOReader quits once no window is open; its Exit closed the file manager but Sereno's home screen stayed open, so KOReader kept running. Sereno's windows now close with the file manager, and the quick controls have an *Exit* button.
+- **KOReader's file browser showed after reading.** After a book closed, Sereno opened its home screen a moment after KOReader had painted its file browser. It now opens while KOReader is showing the file manager (on its Show event), before anything is painted.
+
 ### Changed
 - The tab bar is Home, Library, Reading, Stats, Import and Search; Collections are the Library's first tile.
 

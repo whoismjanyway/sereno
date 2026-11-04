@@ -176,6 +176,41 @@ test("Stats reads KOReader's statistics database; Import opens KOReader's plugin
     fm.calibre, fm.opds = nil, nil
 end)
 
+test("Exit leaves KOReader: Sereno's windows close with the file manager", function()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    local home = p:showHome()
+    local controls = p:showControls()
+    local ids = {}
+    for _i, n in ipairs(controls.nodes) do if n.kind == "tap" and n.action.type == "toggle" then ids[#ids + 1] = n.action.id end end
+    truthy(H.contains(ids, "exit"), "an Exit button: " .. table.concat(ids, ","))
+    local closed = #S.closed
+    -- KOReader's Exit closes the file manager; its plugins get CloseWidget
+    p:onCloseWidget()
+    local gone = {}
+    for i = closed + 1, #S.closed do gone[S.closed[i]] = true end
+    truthy(gone[home] and gone[controls], "home and quick controls closed, so no window keeps KOReader running")
+    -- the Exit button itself asks KOReader to exit
+    local n0 = #S.events
+    p:exitKOReader()
+    eq(S.events[n0 + 1], "Exit")
+end)
+
+test("after a book, the home screen opens before KOReader's file browser is painted", function()
+    S.runScheduled()
+    local reader = Sereno:new{ ui = newUI("reader") }
+    reader:onCloseDocument()
+    local fm_plugin = Sereno:new{ ui = newUI("filemanager") }
+    eq(fm_plugin.pending_home, true)
+    local before = #S.shown
+    -- UIManager:show(file_manager) sends Show to its plugins, before any repaint
+    fm_plugin:onShow()
+    truthy(#S.shown > before and S.shown[#S.shown].name == "sereno_home", "home shown within the same show")
+    eq(fm_plugin.pending_home, nil)
+    local after = #S.shown
+    S.runScheduled()
+    eq(#S.shown, after, "the fallback doesn't open it twice")
+end)
+
 test("the library goes into folders and back, and pages with swipes", function()
     local dir = setupLibrary()
     os.execute(string.format("mkdir -p %q/sub && for i in $(seq 1 30); do cp spec/fixtures/sample.epub %q/sub/b$i.epub; done", dir, dir))
