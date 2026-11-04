@@ -67,6 +67,10 @@ ReaderLayout.PAGES = {
     { id = "roomy", name = "Roomy", spacing = "loose", margins = "wide" },
 }
 
+-- the book page's margins: the running head and the page number sit in them
+ReaderLayout.FOLIO_TOP_MM = 12
+ReaderLayout.FOLIO_BOTTOM_MM = 11
+
 -- Size, as the panel's numbered bar: offsets in points from the base size
 ReaderLayout.SIZE_LEVELS = { -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 8 }
 -- Bold, as the panel's bar: KOReader's font weight (0 = the font as drawn)
@@ -154,6 +158,8 @@ function ReaderLayout.spec(p)
         page = page,
         font = p.font,
         weight = p.weight or 0,
+        -- the book page: title at the top, page number at the bottom
+        folio = p.folio ~= false,
         align = (p.align == "left") and "left" or "justify",
         book_style = p.book_style ~= false,
     }
@@ -236,8 +242,14 @@ function ReaderLayout.compute(screen, preset_or_spec)
     local max_w = max_chars * ReaderLayout.CHAR_EM * font_px
     if screen.width - 2 * side_px > max_w then side_px = (screen.width - max_w) / 2 end
     local h = math.ceil(side_px / f)
-    local t = math.ceil(margins.top_mm * screen.dpi / 25.4 / f)
-    local b = math.ceil(margins.bottom_mm * screen.dpi / 25.4 / f)
+    local top_mm, bottom_mm = margins.top_mm, margins.bottom_mm
+    if spec.folio then
+        -- room for the running head and the page number, as in a printed book
+        top_mm = math.max(top_mm, ReaderLayout.FOLIO_TOP_MM)
+        bottom_mm = math.max(bottom_mm, ReaderLayout.FOLIO_BOTTOM_MM)
+    end
+    local t = math.ceil(top_mm * screen.dpi / 25.4 / f)
+    local b = math.ceil(bottom_mm * screen.dpi / 25.4 / f)
     local values = {
         font_size = font_size,
         h_margins = { h, h },
@@ -247,6 +259,7 @@ function ReaderLayout.compute(screen, preset_or_spec)
         preset = spec.page,
         font = spec.font,
         weight = spec.weight or 0,
+        folio = spec.folio,
         spec = spec,
         align = spec.align,
         book_style = spec.book_style,

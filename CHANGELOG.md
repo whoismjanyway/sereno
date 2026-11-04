@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 (2026-11-04)
+
+### Added
+- **A book page:** the book's title in spaced capitals at the top of every page and the page number centred at the foot, as in a printed book, with margins to hold them. Drawn as a KOReader view module; KOReader's status bar is hidden meanwhile and given back when you choose *Layout → Page style → Status bar*.
+- **Stats tab:** from KOReader's own Reading statistics: the book you're reading (days of reading, time read, progress, time left at your own pace), pages a day and time a day over the last week, days in a row, today's pages and time, the last seven days as bars, and all-time totals. Read-only; Sereno never writes to KOReader's database.
+- **Import tab:** books from calibre over Wi-Fi (KOReader's calibre plugin), online catalogs (KOReader's OPDS browser: Project Gutenberg, Standard Ebooks, your calibre content server, catalogs you add), calibre metadata search, and where to copy books with a cable.
+
+### Changed
+- The tab bar is Home, Library, Reading, Stats, Import and Search; Collections are the Library's first tile.
+
 ## 0.4.0 (2026-11-03)
 
 ### Added

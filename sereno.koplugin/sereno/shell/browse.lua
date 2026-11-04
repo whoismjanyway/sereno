@@ -78,6 +78,10 @@ function Browse.build(tab, state, sources)
         local path = state.path or home
         local listing = sources.list_dir(path) or {}
         local items = {}
+        -- Collections live inside the Library, as its first tile
+        if path == home and sources.collections then
+            items[1] = { kind = "collection", name = "Collections", link = true }
+        end
         local dirs = listing.dirs or {}
         table.sort(dirs, function(a, b) return lower(a.name) < lower(b.name) end)
         for _i, d in ipairs(dirs) do

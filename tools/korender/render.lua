@@ -241,6 +241,31 @@ for _, d in ipairs(DEVICES) do
                 collections = function() return { { name = "Favorites", count = 3 }, { name = "To read", count = 9 } } end,
                 collection = function() return { SAMPLE[1].path, SAMPLE[3].path } end,
                 search = function() return { SAMPLE[3].path } end,
+                -- sample reading statistics (as KOReader's statistics plugin would record them)
+                reading_stats = function()
+                    local Stats = require("sereno/stats/stats")
+                    local today = os.date("%Y-%m-%d")
+                    local days, dates = {}, {}
+                    local mins = { 35, 52, 0, 64, 41, 78, 82 }
+                    for i, d in ipairs(Stats.lastDays(today, 7)) do
+                        local m = mins[8 - i]
+                        if m > 0 then days[d] = { secs = m * 60, pages = math.floor(m * 1.7) } dates[#dates + 1] = d end
+                    end
+                    return Stats.summarize{ today = today, days = days, dates = dates, total = { secs = 1123200, books = 48 },
+                        book = { title = "The Great Gatsby", pages = 179, read_secs = 31500, read_pages = 140, days = 7, percent = 0.78 } }
+                end,
+                import_items = function()
+                    return {
+                        { id = "calibre_connect", icon = "wifi", title = _("Calibre, wirelessly"),
+                          subtitle = _("Send books from calibre on your computer: in calibre, Connect/share → Start wireless device connection, then tap here.") },
+                        { id = "opds", glyph = "download", title = _("Online catalogs (OPDS)"),
+                          subtitle = _("Free libraries such as Project Gutenberg and Standard Ebooks, your calibre content server, or any catalog you add.") },
+                        { id = "calibre_search", icon = "appbar.search", title = _("Search calibre metadata"),
+                          subtitle = _("Find books you sent from calibre by title, author, series or tag.") },
+                        { id = "cable", icon = "appbar.filebrowser", title = _("With a cable"), info = true,
+                          subtitle = string.format(_("Copy EPUB files into %s on your reader; they appear in the Library."):gsub("%%1", "%%s"), "/mnt/us/documents") },
+                    }
+                end,
             },
             options = { translate = _, page_method = "print", wpm = 230 },
         }
@@ -251,10 +276,12 @@ for _, d in ipairs(DEVICES) do
         print(string.format("%-14s %dx%d @%d dpi -> %s (%d nodes, body face %dpx)", d.id, d.width, d.height, d.dpi, pgm,
             #home.nodes, home:face("body").size))
         -- the Library tab, then the quick controls pulled down over the home screen
-        home.tab = "library"
-        home:build()
-        home:paintTo(bb, 0, 0)
-        writePGM(bb, string.format("%s/%s-library.pgm", out_dir, d.id))
+        for _j, tab in ipairs({ "library", "stats", "import" }) do
+            home.tab = tab
+            home:build()
+            home:paintTo(bb, 0, 0)
+            writePGM(bb, string.format("%s/%s-%s.pgm", out_dir, d.id, tab))
+        end
         home.tab = "home"
         home:build()
         home:paintTo(bb, 0, 0)
@@ -391,15 +418,24 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                 local face = Font:getFace("NotoSerif-Regular.ttf", c.v.font_size)
                 local heading_face = Font:getFace("NotoSerif-Regular.ttf", c.v.font_size * 1.6)
                 local footer_face = Font:getFace("NotoSans-Regular.ttf", 14)
-                local text_h = d.height - ph.top_px - ph.bottom_px - footer_px
+                -- KOReader's status bar takes its own strip; Sereno's book page hides it
+                local text_h = d.height - ph.top_px - ph.bottom_px - (c.id == "koreader" and footer_px or 0)
                 local stats = BookPage.render{
                     bb = bb, x = ph.side_px, y = ph.top_px, width = d.width - 2 * ph.side_px, height = text_h,
                     face = face, heading_face = heading_face, footer_face = footer_face, RenderText = RenderText,
                     color = Blitbuffer.COLOR_BLACK, grey = Blitbuffer.COLOR_GRAY_4 or Blitbuffer.COLOR_DARK_GRAY,
                     line_px = ph.line_px, font_px = ph.font_px, align = c.align, hyph = hyph,
                     blocks = blocks, chapter_opening = true,
-                    footer = { left = string.format("1 / %d", total), right = "1%", y = d.height - footer_px, h = footer_px },
+                    footer = c.id == "koreader" and { left = string.format("1 / %d", total), right = "1%", y = d.height - footer_px, h = footer_px } or nil,
                 }
+                if c.id ~= "koreader" then
+                    -- the book page: Sereno's running head and page number (sereno/reader/folio.lua)
+                    local Folio = require("sereno/reader/folio")
+                    Folio.new{ enabled = function() return true end, info = function()
+                        return { title = "The Great Gatsby", page_label = "1", font_file = "fonts/noto/NotoSerif-Regular.ttf",
+                            font_size = c.v.font_size, top_px = ph.top_px, bottom_px = ph.bottom_px }
+                    end }:paintTo(bb, 0, 0)
+                end
                 if c.bars then
                     local Theme = require("sereno/ui/theme")
                     local Painter = require("sereno/ui/painter")

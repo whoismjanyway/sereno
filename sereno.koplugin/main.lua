@@ -31,6 +31,7 @@ local ChromeLayout = require("sereno/reader/chrome")
 local ControlsLayout = require("sereno/controls/layout")
 local Overlay = require("sereno/ui/overlay")
 local SleepLayout = require("sereno/sleep/layout")
+local Folio = require("sereno/reader/folio")
 local MetricsCache = require("sereno/metrics/cache")
 
 local DataStorage = require("datastorage")
@@ -565,7 +566,66 @@ function Sereno:homeSources()
         collections = Library.collections,
         collection = Library.collection,
         search = function(query) return Library.search(query, Browse.matches) end,
+        reading_stats = function() return self:readingStats() end,
+        import_items = function() return self:importItems() end,
     }
+end
+
+--- Reading statistics, from KOReader's own statistics database.
+function Sereno:readingStats()
+    local Stats = require("sereno/stats/stats")
+    local Source = require("sereno/stats/source")
+    local raw = Source.read(DataStorage:getSettingsDir() .. "/statistics.sqlite3", {
+        -- the progress KOReader keeps for the last book, when it's the same one
+        book_percent = function(title)
+            local last = G_reader_settings:readSetting("lastfile")
+            local info = last and Library.bookInfo(last)
+            if info and info.title == title then return info.percent end
+        end,
+    })
+    if not raw then return { empty = true, week = {} } end
+    return Stats.summarize(raw)
+end
+
+--- Ways to bring books in, through KOReader's own plugins.
+function Sereno:importItems()
+    local FileManager = package.loaded["apps/filemanager/filemanager"]
+    local fm = FileManager and FileManager.instance
+    local host = fm or self.ui
+    local has_calibre = host and host.calibre ~= nil
+    local has_opds = host and host.opds ~= nil
+    return {
+        { id = "calibre_connect", icon = "wifi", title = _("Calibre, wirelessly"), available = has_calibre,
+          subtitle = has_calibre and _("Send books from calibre on your computer: in calibre, Connect/share → Start wireless device connection, then tap here.")
+              or _("Turn on KOReader's calibre plugin (Tools → Plugin management) to use this.") },
+        { id = "opds", glyph = "download", title = _("Online catalogs (OPDS)"), available = has_opds,
+          subtitle = has_opds and _("Free libraries such as Project Gutenberg and Standard Ebooks, your calibre content server, or any catalog you add.")
+              or _("Turn on KOReader's OPDS catalog plugin (Tools → Plugin management) to use this.") },
+        { id = "calibre_search", icon = "appbar.search", title = _("Search calibre metadata"), available = has_calibre,
+          subtitle = _("Find books you sent from calibre by title, author, series or tag.") },
+        { id = "cable", icon = "appbar.filebrowser", title = _("With a cable"), info = true,
+          subtitle = T(_("Copy EPUB files into %1 on your reader; they appear in the Library."), Library.homeDir()) },
+    }
+end
+
+--- An Import row: KOReader's calibre and OPDS plugins do the work.
+function Sereno:runImport(id, home)
+    local FileManager = package.loaded["apps/filemanager/filemanager"]
+    local fm = FileManager and FileManager.instance
+    local host = fm or self.ui
+    local function missing()
+        UIManager:show(InfoMessage:new{ text = _("This needs a KOReader plugin that is turned off. Turn it on in Tools → Plugin management."), timeout = 4 })
+    end
+    if id == "calibre_connect" then
+        if not (host and host.calibre) then return missing() end
+        UIManager:broadcastEvent(Event:new("StartWirelessConnection"))
+    elseif id == "calibre_search" then
+        if not (host and host.calibre) then return missing() end
+        UIManager:broadcastEvent(Event:new("CalibreSearch"))
+    elseif id == "opds" then
+        if not (host and host.opds) then return missing() end
+        if host.opds.onShowOPDSCatalog then host.opds:onShowOPDSCatalog() end
+    end
 end
 
 --- The Sereno shell, on `tab` (home by default).
@@ -641,6 +701,8 @@ function Sereno:onHomeAction(action, home)
     if not action then return end
     if action.type == "open" then
         return self:openBook(action.file)
+    elseif action.type == "import" then
+        return self:runImport(action.id, home)
     elseif action.type == "search_input" then
         local InputDialog = require("ui/widget/inputdialog")
         local dialog
@@ -1301,8 +1363,67 @@ function Sereno:showMoreSelection(hl, index)
     return dialog
 end
 
+--- The book page (running head and page number), see sereno/reader/folio.lua.
+function Sereno:folioOn()
+    return self.ui.rolling and self:currentSpec().folio and self.settings:readSetting("reading_layout") ~= nil
+end
+
+function Sereno:folioInfo()
+    local ui = self.ui
+    local doc = ui.document
+    if not doc then return nil end
+    local props = doc.getProps and doc:getProps() or {}
+    local title = props.title ~= "" and props.title or (doc.file or ""):match("([^/]+)%.[^.]+$")
+    local label
+    local pm = ui.pagemap
+    if pm and pm.wantsPageLabels and pm:wantsPageLabels() then label = pm:getCurrentPageLabel(true)
+    elseif doc.getCurrentPage then label = doc:getCurrentPage() end
+    local cfg = doc.configurable or {}
+    local font_file
+    local okf, FontList = pcall(require, "fontlist")
+    local face = ui.font and ui.font.font_face
+    if okf and FontList and face then
+        for path, fi in pairs(FontList.fontinfo or {}) do
+            if fi[1] and fi[1].name == face and not fi[1].bold and not fi[1].italic then font_file = path break end
+        end
+    end
+    return {
+        title = title, page_label = label, font_file = font_file, font_size = cfg.font_size,
+        top_px = Screen:scaleBySize(cfg.t_page_margin or 0), bottom_px = Screen:scaleBySize(cfg.b_page_margin or 0),
+    }
+end
+
+--- KOReader's status bar is hidden while the book page shows, and given back after.
+function Sereno:applyFolio()
+    local ui = self.ui
+    if ui.view and ui.view.registerViewModule and not (ui.view.view_modules or {}).sereno_folio then
+        ui.view:registerViewModule("sereno_folio", Folio.new{
+            enabled = function() return self:folioOn() end,
+            info = function() return self:folioInfo() end,
+        })
+    end
+    local footer = ui.view and ui.view.footer
+    if not (footer and footer.applyFooterMode and footer.mode_list) then return end
+    if self:folioOn() then
+        if footer.mode ~= footer.mode_list.off then
+            self.settings:saveSetting("footer_mode_backup", footer.mode)
+            footer:applyFooterMode(footer.mode_list.off)
+            G_reader_settings:saveSetting("reader_footer_mode", footer.mode_list.off)
+        end
+    else
+        local backup = self.settings:readSetting("footer_mode_backup")
+        if backup and footer.mode == footer.mode_list.off then
+            footer:applyFooterMode(backup)
+            G_reader_settings:saveSetting("reader_footer_mode", backup)
+            self.settings:delSetting("footer_mode_backup")
+        end
+    end
+    UIManager:setDirty(ui.view.dialog or "all", "partial")
+end
+
 function Sereno:onReaderReady()
     pcall(self.applySelectionMenu, self)
+    pcall(self.applyFolio, self)
     if self:isSleepScreenOn() then
         UIManager:scheduleIn(3, function() if self.ui.document then self:renderSleepImage() end end)
     end
@@ -1370,7 +1491,7 @@ function Sereno:applyReadingLayout(values, changed)
         self.ui:handleEvent(Event:new("SetLineSpace", values.line_spacing))
     end
     -- the margins follow the text size too, through the line-length cap
-    if all or changed == "pt" or changed == "page" then
+    if all or changed == "pt" or changed == "page" or changed == "folio" then
         -- all four margins in one re-layout; ReaderTypeset keeps the unscaled
         -- values it later edits one side at a time from
         local margins = { values.h_margins[1], values.t_margin, values.h_margins[2], values.b_margin }
@@ -1379,6 +1500,9 @@ function Sereno:applyReadingLayout(values, changed)
     end
     if all or changed == "align" or changed == "book_style" then
         self:applyTypography(values.spec, true)
+    end
+    if all or changed == "folio" then
+        UIManager:nextTick(function() pcall(self.applyFolio, self) end)
     end
     return true
 end
@@ -1468,6 +1592,7 @@ function Sereno:setDefaultReadingLayout(values)
             else G_reader_settings:delSetting("cre_font") end
         end
         self:restoreTypography()
+        if self.ui.document then UIManager:nextTick(function() pcall(self.applyFolio, self) end) end
         self.settings:delSetting("copt_backup")
         self.settings:delSetting("reading_layout")
     end

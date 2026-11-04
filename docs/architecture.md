@@ -31,6 +31,9 @@ sereno.koplugin/
     ├── controls/layout.lua    ✱ quick controls sheet
     ├── reader/chrome.lua      ✱ the reader's top and bottom bars
     ├── sleep/layout.lua       ✱ Sereno's sleep screen image
+    ├── reader/folio.lua       the book page: running head and page number (a ReaderView view module)
+    ├── stats/stats.lua        ✱ reading statistics: streak, averages, time left
+    ├── stats/source.lua       reads KOReader's statistics.sqlite3 (read-only)
     ├── reader/
     │   ├── layout.lua         ✱ the page in pt/mm (size, spacing, margins, alignment, paragraphs) → KOReader settings and style tweaks
     │   ├── panel.lua          ✱ the Text panel (font, size, page) as positioned nodes, and its miniature pages
@@ -58,6 +61,9 @@ sereno.koplugin/
 | Quick control actions | `UIManager:broadcastEvent` of KOReader's events (`ToggleWifi`, `ToggleNightMode`, `IterateRotation`, `Restart`, `RequestSuspend`), `powerd:setIntensity` / `setWarmth` |
 | Reader navigation | `GotoPage`, `ReaderToc` chapters, `ReaderLink` location stack, `ReaderPageMap` labels |
 | Collections | `ReadCollection` |
+| Book page | `ReaderView:registerViewModule("sereno_folio", …)`; `ReaderFooter:applyFooterMode` to hide and give back the status bar |
+| Reading statistics | `settings/statistics.sqlite3` through `lua-ljsqlite3` (read-only) |
+| Import | The calibre plugin (`StartWirelessConnection`, `CalibreSearch`) and the OPDS plugin (`onShowOPDSCatalog`) |
 | Unified settings | A `TouchMenu` with Sereno's tab followed by `ui.menu.tab_item_table` (KOReader's own tabs) |
 | Settings tab icon | `sereno.logo.svg` copied into KOReader's user icons folder (`<data>/icons`) |
 | Sleep screen | `screensaver_type = "random_image"` with `screensaver_dir` = Sereno's folder (previous values kept and restored); `ui/elements/screensaver_menu` for KOReader's own options; `onSuspend` / `onResume` |

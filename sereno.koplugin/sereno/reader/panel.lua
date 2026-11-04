@@ -266,12 +266,20 @@ local function layoutTab(nodes, t, _, values, opts, x, y, w)
             page = { margin = Panel.MARGIN_SIZE[now.margins], gap = Panel.SPACING_GAP[now.spacing], align = a.id,
                 paragraphs = paragraphs } }
     end
+    local styles = {}
+    for _i, st in ipairs({ { true, "Book" }, { false, "Status bar" } }) do
+        styles[#styles + 1] = { key = "folio", value = st[1], selected = (spec.folio ~= false) == st[1], caption = _(st[2]),
+            page = { margin = Panel.MARGIN_SIZE[now.margins], gap = Panel.SPACING_GAP[now.spacing], align = spec.align,
+                paragraphs = paragraphs, folio = st[1] and "book" or "bar" } }
+    end
     local gap = t.gutter * 2
     local left_w = math.floor((w - gap) * 0.6)
     local b1 = pageRow(nodes, t, { id = "page", text = _("Page") }, x, y, left_w, pages, icon_w, icon_h)
     local b2 = pageRow(nodes, t, { id = "align", text = _("Alignment") }, x + left_w + gap, y, w - left_w - gap, aligns,
         icon_w, icon_h)
-    y = math.max(b1, b2) + t:space(2)
+    y = math.max(b1, b2) + t:space(3)
+    -- the page style: a book's running head and page number, or KOReader's status bar
+    y = pageRow(nodes, t, { id = "folio", text = _("Page style") }, x, y, left_w, styles, icon_w, icon_h) + t:space(2)
     local ph = values.physical
     textNode(nodes, t, { id = "layout_detail", x = x, y = y, w = w, style = "micro", color = "secondary", align = "center",
         text = string.format(_("%d mm margins · %d lines a page"), math.floor(ph.side_mm + 0.5), ph.lines_per_page) })
@@ -343,6 +351,19 @@ function Panel.paintPage(node, rect, hairline)
     rect(x, y, bw, h, "text"); rect(x + w - bw, y, bw, h, "text")
     local m = math.max(bw + 1, math.floor(w * node.margin + 0.5))
     local top = math.max(bw + 1, math.floor(h * 0.12 + 0.5))
+    local line_h0 = math.max(1, math.floor(w * 0.035 + 0.5))
+    if node.folio == "book" then
+        -- a short running head at the top, a page number at the foot
+        top = math.max(top, math.floor(h * 0.2))
+        local hw = math.floor(w * 0.3)
+        rect(x + math.floor((w - hw) / 2), y + math.floor(h * 0.09), hw, line_h0, "text")
+        local fw = math.max(2, math.floor(w * 0.08))
+        rect(x + math.floor((w - fw) / 2), y + h - math.floor(h * 0.1), fw, line_h0 + 1, "text")
+    elseif node.folio == "bar" then
+        -- a status line across the foot
+        rect(x + m, y + h - math.floor(h * 0.1), math.floor((w - 2 * m) * 0.3), line_h0, "text")
+        rect(x + w - m - math.floor((w - 2 * m) * 0.15), y + h - math.floor(h * 0.1), math.floor((w - 2 * m) * 0.15), line_h0, "text")
+    end
     local line_h = math.max(1, math.floor(w * 0.035 + 0.5))
     local gap = math.max(line_h + 1, math.floor(w * node.gap + 0.5))
     local tw = w - 2 * m
@@ -352,7 +373,8 @@ function Panel.paintPage(node, rect, hairline)
     local ly, i, line_in_para = y + top, 0, 0
     local para_len = { 4, 3, 5, 4, 3, 4 }
     local p = 1
-    while ly + line_h <= y + h - top do
+    local bottom_room = node.folio and math.floor(h * 0.18) or top
+    while ly + line_h <= y + h - bottom_room do
         i = i + 1
         line_in_para = line_in_para + 1
         local last = line_in_para == para_len[(p - 1) % #para_len + 1]

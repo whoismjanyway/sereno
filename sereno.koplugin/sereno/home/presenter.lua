@@ -55,10 +55,13 @@ function Presenter.frame(_, status, active, d)
             { id = "home", label = _("Home"), icon = "home" },
             { id = "library", label = _("Library"), icon = "appbar.filebrowser" },
             { id = "history", label = _("Reading"), icon = "book.opened" },
-            { id = "collections", label = _("Collections"), icon = "star.empty" },
+            { id = "stats", label = _("Stats"), glyph = "chart" },
+            { id = "import", label = _("Import"), glyph = "download" },
             { id = "search", label = _("Search"), icon = "appbar.search" },
         },
     }
+    -- Collections live inside the Library
+    if active == "collections" then active = "library" end
     for _i, item in ipairs(copy.nav) do item.active = item.id == active end
     if status.battery then
         local battery = tostring(status.battery) .. "%" .. (status.charging and " +" or "")
@@ -96,6 +99,53 @@ function Presenter.browse(model, _, status, sep)
     copy.finished = _("Finished")
     copy.count_books = _("%d books")
     copy.page_of = _("%d of %d")
+    copy.collections = _("Collections")
+    return copy
+end
+
+--- Words for the Stats tab (sereno/stats/stats.summarize).
+function Presenter.stats(model, _, status, sep, duration)
+    sep = sep or ","
+    local copy = Presenter.frame(_, status, "stats")
+    copy.title = _("Reading statistics")
+    copy.empty = _("Turn on KOReader's Reading statistics (Tools → Reading statistics) and your reading will show here.")
+    local words = { h = _("h"), min = _("min"), less = _("under a minute") }
+    local dur = function(secs) return duration(secs, words) end
+    if model.book then
+        copy.book_label = _("This book")
+        local parts = {}
+        parts[#parts + 1] = fill(model.book.days == 1 and _("1 day of reading") or _("%1 days of reading"), model.book.days)
+        parts[#parts + 1] = fill(_("%1 read"), dur(model.book.read_secs))
+        parts[#parts + 1] = fill("%1%", math.floor((model.book.percent or 0) * 100 + 0.5))
+        if model.book.left_secs then parts[#parts + 1] = fill(_("%1 left"), dur(model.book.left_secs)) end
+        copy.book_line = table.concat(parts, " · ")
+    end
+    -- compact times in the boxes: "1h 22m"
+    local Stats = require("sereno/stats/stats")
+    local short = function(secs) return Stats.short(secs, { h = _("h"), m = _("m") }) end
+    copy.tiles = {
+        { value = thousands(model.pages_per_day or 0, sep), label = _("pages a day") },
+        { value = short(model.daily_avg_secs or 0), label = _("a day, on average") },
+        { value = thousands(model.streak or 0, sep), label = _("days in a row") },
+        { value = thousands(model.today_pages or 0, sep), label = _("pages today") },
+        { value = short(model.today_secs or 0), label = _("read today") },
+    }
+    copy.week_label = _("Last 7 days")
+    local initials = { _("Su"), _("Mo"), _("Tu"), _("We"), _("Th"), _("Fr"), _("Sa") }
+    copy.week_days = {}
+    for i, d in ipairs(model.week or {}) do
+        local y, m, dd = d.date:match("(%d+)-(%d+)-(%d+)")
+        local wday = os.date("*t", os.time{ year = tonumber(y), month = tonumber(m), day = tonumber(dd), hour = 12 }).wday
+        copy.week_days[i] = initials[wday]
+    end
+    copy.total_line = fill(_("All time: %1 · %2 books"), dur(model.total_secs or 0), thousands(model.total_books or 0, sep))
+    return copy
+end
+
+--- Words for the Import tab.
+function Presenter.import(_, status)
+    local copy = Presenter.frame(_, status, "import")
+    copy.title = _("Import books")
     return copy
 end
 

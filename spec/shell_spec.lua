@@ -110,6 +110,59 @@ test("the sleep screen fits every screen", function()
     end
 end)
 
+test("the Stats and Import tabs fit every screen", function()
+    local Stats = require("sereno/stats/stats")
+    local raw = { today = "2026-11-04", days = { ["2026-11-04"] = { secs = 4920, pages = 136 }, ["2026-11-02"] = { secs = 7800, pages = 210 } },
+        dates = { "2026-11-04", "2026-11-03", "2026-11-02" }, total = { secs = 1123200, books = 48 },
+        book = { title = "The Great Gatsby", pages = 180, read_secs = 31500, read_pages = 140, days = 7, percent = 0.78 } }
+    local model = Stats.summarize(raw)
+    for _i, scr in ipairs(SCREENS) do
+        local t = Theme.new{ width = scr[2], height = scr[3], dpi = scr[4] }
+        local copy = Presenter.stats(model, function(s) return s end, { time = "9:41", battery = 80 }, ",", Stats.duration)
+        fits(scr[1] .. " stats", t, ShellLayout.stats(t, model, copy))
+        fits(scr[1] .. " stats empty", t, ShellLayout.stats(t, { empty = true, week = {} }, copy))
+        local items = {
+            { id = "calibre_connect", icon = "wifi", title = "Calibre, wirelessly", subtitle = "Send books from calibre on your computer, then tap here." },
+            { id = "opds", glyph = "download", title = "Online catalogs (OPDS)", subtitle = "Free libraries and your own catalogs." },
+            { id = "calibre_search", icon = "appbar.search", title = "Search calibre metadata", subtitle = "By title, author, series or tag." },
+            { id = "cable", icon = "appbar.filebrowser", title = "With a cable", subtitle = "Copy EPUB files into /mnt/us/documents.", info = true },
+        }
+        fits(scr[1] .. " import", t, ShellLayout.import(t, items, Presenter.import(function(s) return s end, {})))
+    end
+end)
+
+test("reading statistics: streak, averages, time left", function()
+    local Stats = require("sereno/stats/stats")
+    eq(Stats.streak({ "2026-11-04", "2026-11-03", "2026-11-02", "2026-10-30" }, "2026-11-04"), 3)
+    eq(Stats.streak({ "2026-11-03", "2026-11-02" }, "2026-11-04"), 2, "today not read yet: the streak still stands")
+    eq(Stats.streak({ "2026-11-01" }, "2026-11-04"), 0)
+    local m = Stats.summarize({ today = "2026-11-04", days = { ["2026-11-04"] = { secs = 3600, pages = 70 }, ["2026-10-30"] = { secs = 3600, pages = 70 } },
+        dates = { "2026-11-04" }, total = { secs = 7200, books = 1 },
+        book = { title = "x", pages = 200, read_secs = 6000, read_pages = 100, days = 2, percent = 0.5 } })
+    eq(m.today_pages, 70)
+    eq(m.pages_per_day, 20, "140 pages over 7 days")
+    eq(m.daily_avg_secs, 1029)
+    eq(m.book.left_secs, 6000, "60 s a page, 100 pages to go")
+    eq(#m.week, 7)
+    eq(m.week[7].date, "2026-11-04", "today last")
+    eq(Stats.duration(8100), "2 h 15 min")
+    eq(Stats.duration(20), "under a minute")
+end)
+
+test("the book page: spaced capitals, centred in the margins", function()
+    local Folio = require("sereno/reader/folio")
+    eq(Folio.head("El hobbit"), "E\u{200A}L\u{200A}\u{2002}\u{200A}H\u{200A}O\u{200A}B\u{200A}B\u{200A}I\u{200A}T")
+    local pos = Folio.place(1648, 140, 130, 30, 34)
+    truthy(pos.head_y > 0 and pos.head_y + 30 <= 140, "head inside the top margin")
+    truthy(pos.folio_y >= 1648 - 130 and pos.folio_y + 34 <= 1648, "page number inside the bottom margin")
+    local RL = require("sereno/reader/layout")
+    local PW = { width = 1236, height = 1648, dpi = 300 }
+    local book = RL.compute(PW, RL.spec({ page = "normal" }))
+    local bar = RL.compute(PW, RL.spec({ page = "normal", folio = false }))
+    truthy(book.physical.top_mm >= RL.FOLIO_TOP_MM - 0.5 and book.physical.bottom_mm >= RL.FOLIO_BOTTOM_MM - 0.5, "room for head and folio")
+    truthy(bar.t_margin < book.t_margin, "the status bar style keeps the plain margins")
+end)
+
 test("search matches every word, in any case", function()
     truthy(Browse.matches("great gatsby", "The Great Gatsby", "Fitzgerald", "/b/x.epub"))
     truthy(Browse.matches("FITZ", "The Great Gatsby", "F. Scott Fitzgerald", "/b/x.epub"))
@@ -120,7 +173,9 @@ end)
 test("sorting and the reading list", function()
     local src = sources(5, 0)
     local m = Browse.build("library", { sort = "recent" }, src)
-    eq(m.items[1].file, "/books/Book number 5.epub")
+    eq(m.items[1].kind, "collection", "Collections, as the Library's first tile")
+    eq(m.items[1].link, true)
+    eq(m.items[2].file, "/books/Book number 5.epub")
     eq(Browse.nextSort("title"), "author")
     eq(Browse.nextSort("recent"), "title")
     local h = Browse.build("history", {}, src)

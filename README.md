@@ -10,6 +10,8 @@ Sereno is a KOReader plugin that replaces the interface you see every day:
 - **Quick controls:** swipe down from the top edge for Wi-Fi, night mode, the light, rotation, restart, sleep, and brightness and warmth sliders.
 - **One settings screen:** Sereno's own tab (the book mark) next to all of KOReader's tabs, unchanged, so every KOReader option still works and nothing Sereno adds gets mixed into KOReader's pages.
 - **Sleep screens that keep working:** KOReader's own sleep screen options (covers, your images and folders, messages) are untouched, and Sereno adds an optional cover-and-progress sleep screen.
+- **A book page:** the title as a running head and the page number at the foot, like a printed book.
+- **Reading statistics** and **Import** (calibre over Wi-Fi, OPDS catalogs such as Project Gutenberg and Standard Ebooks) as tabs of their own.
 - **Bars in the book:** tap the top or bottom of a page for a toolbar (Home, text & page, contents, bookmarks, search, KOReader's menu) and a progress bar with chapter marks, chapter skips and *Back to page …*.
 - **A contextual home screen** designed from the physical size of your screen, not its pixel count.
 - **Print-like page counts, word counts and readability** for every book in your library, computed without opening the books.
@@ -49,6 +51,14 @@ Sereno is a KOReader plugin that replaces the interface you see every day:
 Everything goes through KOReader's public extension points: the bars are touch zones registered on the reader before KOReader's menu zones, the quick controls send KOReader's own events (`ToggleWifi`, `ToggleNightMode`, `IterateRotation`, …), and the shell is a full-screen window over the file manager. Turn off *Settings → Sereno → Sereno's bars in books* to get KOReader's menus back.
 
 ![The same screens on a 6" Kindle](docs/images/shell/shell-kindle-basic.png)
+
+### Stats and Import
+
+**Stats** shows what KOReader's Reading statistics plugin records: the book you're reading (days of reading, time read, progress and time left at your own pace), pages and time a day over the last week, days in a row, today, the last seven days as bars, and all-time totals. Sereno only reads that database.
+
+**Import** brings books in through KOReader's own plugins: *Calibre, wirelessly* (start the wireless device connection in calibre, then tap), *Online catalogs (OPDS)* (Project Gutenberg, Standard Ebooks, your calibre content server, or any catalog you add), *Search calibre metadata*, and the folder to copy books into with a cable.
+
+![Stats and Import on a Kindle Paperwhite](docs/images/shell/stats-paperwhite.png)
 
 ### Settings and sleep screen
 
@@ -132,7 +142,7 @@ Tap *Aa* in the bar at the top of a book (or *Font, size and page (Sereno)* in K
 |---|---|
 | **Themes** | Compact, Standard and Large, and your own: *Save current settings* keeps the font, size, bold, page and alignment under a name. Hold a theme you saved to delete it. |
 | **Font** | *Font family*, written in its own typeface; tap it for a list of every font, each shown in itself. *Bold* as a bar of five boxes (KOReader's font weight). *Size* as a numbered bar of 14 boxes, with − and +. |
-| **Layout** | *Page*: Compact, Normal or Roomy (margins of 5, 8 or 14 mm with matching line spacing; on big screens the margins grow so lines stay readable). *Alignment*: justified or left. |
+| **Layout** | *Page*: Compact, Normal or Roomy (margins of 5, 8 or 14 mm with matching line spacing; on big screens the margins grow so lines stay readable). *Alignment*: justified or left. *Page style*: **Book** (the title as a running head in spaced capitals, the page number centred at the foot, as in a printed book) or KOReader's **Status bar**. |
 
 ![Themes, Font, the font list and Layout on a Kindle Paperwhite](docs/images/design/reader-panel-tabs.png)
 
@@ -207,8 +217,8 @@ Long-press a book in the file browser, or hold it on the home screen, to see eve
 
 Covers come from KOReader's CoverBrowser cache when that plugin is on. Otherwise Sereno renders the cover image stored inside the EPUB itself, keeping at most 16 in memory. To uninstall, turn tiered menus off first (that restores your own menu order file), then delete the folder.
 
-> **Status:** 0.4, early. **It has not yet been tried on a real device.** What has been checked:
-> - **Specs:** 186 of them, run against KOReader's latest release, run on LuaJIT with stubs of KOReader's modules.
+> **Status:** 0.5, early. **It has not yet been tried on a real device.** What has been checked:
+> - **Specs:** 190 of them, run against KOReader's latest release, run on LuaJIT with stubs of KOReader's modules.
 > - **Real widget code:** the home screen is also drawn by KOReader's own code (blitbuffer, FreeType fonts, TextBoxWidget, IconWidget) on every CI run, with `tools/korender`.
 > - **Previews:** layout previews for several devices. Please report what you see; see [CONTRIBUTING.md](CONTRIBUTING.md).
 

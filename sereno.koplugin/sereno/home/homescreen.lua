@@ -49,7 +49,7 @@ function HomeScreen:init()
         scale_by_size = function(n) return Screen:scaleBySize(n) end,
     }
     self.painter = Painter.new(self.theme, self.sources and self.sources.cover)
-    self.states = { library = {}, history = {}, collections = {}, search = {} }
+    self.states = { library = {}, history = {}, collections = {}, search = {}, stats = {}, import = {} }
     if Device:isTouchDevice() then
         self.ges_events = {
             Tap = { GestureRange:new{ ges = "tap", range = self.dimen } },
@@ -94,6 +94,17 @@ function HomeScreen:build()
         })
         local copy = Presenter.present(self.model, _, status, opts.thousands)
         self.nodes = Layout.home(self.theme, self.model, copy)
+        self.paging = nil
+    elseif self.tab == "stats" then
+        local Stats = require("sereno/stats/stats")
+        self.stats_model = (self.sources.reading_stats and self.sources.reading_stats()) or { empty = true, week = {} }
+        local copy = Presenter.stats(self.stats_model, _, status, opts.thousands, Stats.duration)
+        self.nodes = ShellLayout.stats(self.theme, self.stats_model, copy)
+        self.paging = nil
+    elseif self.tab == "import" then
+        local copy = Presenter.import(_, status)
+        self.import_items = self.sources.import_items and self.sources.import_items() or {}
+        self.nodes = ShellLayout.import(self.theme, self.import_items, copy)
         self.paging = nil
     else
         local state = self.states[self.tab]

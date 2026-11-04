@@ -144,8 +144,9 @@ local function grid(nodes, t, items, copy, x, y, w, bottom, page)
                 h = 2 * t.type.caption.line, text = item.title or "", style = "caption", max_lines = 2, align = "left" }
         else
             local is_coll = item.kind == "collection"
-            tile(nodes, t, id, ix, cy, cw, cover_h, is_coll and "star" or "folder", item.name)
-            action = is_coll and { type = "collection", name = item.name } or { type = "folder", path = item.path }
+            tile(nodes, t, id, ix, cy, cw, cover_h, is_coll and "star" or "folder", item.link and (copy.collections or item.name) or item.name)
+            action = (item.link and { type = "nav", target = "collections" })
+                or (is_coll and { type = "collection", name = item.name }) or { type = "folder", path = item.path }
             if item.count then detail = (copy.count_books or "%d"):format(item.count) end
         end
         if detail and detail ~= "" then
@@ -202,6 +203,131 @@ function ShellLayout.browse(t, model, copy, page)
         pager(nodes, t, copy, paging, x, bottom + t:space(1), w)
     end
     return nodes, paging
+end
+
+--- A small card of a number and what it means.
+local function statTile(nodes, t, id, x, y, w, h, value, label)
+    nodes[#nodes + 1] = { kind = "box", id = id .. "_box", x = x, y = y, w = w, h = h, radius = Layout.radius(t),
+        border = "hairline", bw = t.hairline }
+    nodes[#nodes + 1] = { kind = "text", id = id .. "_value", x = x + t:space(1), y = y + t:space(2), w = w - t:space(2),
+        h = t.type.title.line, text = value, style = w < t:mm(20) and "label" or "title", max_lines = 1, align = "center" }
+    nodes[#nodes + 1] = { kind = "text", id = id .. "_label", x = x + t:space(1), y = y + t:space(2) + t.type.title.line,
+        w = w - t:space(2), h = 2 * t.type.micro.line, text = label, style = "micro", color = "secondary", max_lines = 2,
+        align = "center" }
+end
+
+--[[--
+The Stats tab: the book you're reading, five numbers, the last seven days
+as bars, and all-time totals. From KOReader's Reading statistics.
+@tparam table model sereno/stats/stats.summarize() result
+@tparam table copy  Presenter.stats() strings
+]]
+function ShellLayout.stats(t, model, copy)
+    local nodes = {}
+    local x, w = t.margin, t.content_width
+    local y = Layout.header(nodes, t, copy, x, t:space(3), w, true) + t:space(3)
+    y = titleRow(nodes, t, {}, copy, x, y, w) + t:space(3)
+    Layout.navBar(nodes, t, copy, t.height)
+    if model.empty then
+        text(nodes, t, { id = "empty", x = x + t:space(4), y = y + t:space(6), w = w - t:space(8), text = copy.empty or "",
+            style = "body", color = "secondary", align = "center", max_lines = 5 })
+        return nodes
+    end
+    if model.book then
+        y = text(nodes, t, { id = "book_label", text = (copy.book_label or ""):upper(), style = "micro", color = "secondary",
+            x = x, y = y, w = w, lines = 1 }) + t:space(1)
+        y = text(nodes, t, { id = "book_title", text = model.book.title or "", style = "title", x = x, y = y, w = w,
+            max_lines = 1, lines = 1 }) + t:space(2)
+        local bh = math.max(3, math.floor(t:mm(1.2)))
+        nodes[#nodes + 1] = { kind = "bar", id = "book_bar", x = x, y = y, w = w, h = bh, fraction = model.book.percent or 0 }
+        y = y + bh + t:space(2)
+        y = text(nodes, t, { id = "book_line", text = copy.book_line or "", style = "caption", x = x, y = y, w = w,
+            max_lines = 2 }) + t:space(4)
+    end
+    -- five numbers: one row on wide screens, three and two on small ones
+    local cols = t.content_width / t.dpi * 25.4 >= 80 and 5 or 3
+    local gap = cols == 5 and t:space(1) or t:space(2)
+    local tw = math.floor((w - (cols - 1) * gap) / cols)
+    local th = t:space(4) + t.type.title.line + 2 * t.type.micro.line
+    for i, tl in ipairs(copy.tiles or {}) do
+        local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+        statTile(nodes, t, "tile_" .. i, x + col * (tw + gap), y + row * (th + gap), tw, th, tl.value, tl.label)
+    end
+    y = y + math.ceil(#(copy.tiles or {}) / cols) * (th + gap) + t:space(3)
+    -- the last seven days, as bars
+    local nav_top = t.height - Layout.navHeight(t)
+    local chart_h = math.min(math.floor(t:mm(22)), nav_top - y - t:space(4) - t.type.micro.line * 3 - t.type.caption.line)
+    if chart_h > t:mm(8) then
+        y = text(nodes, t, { id = "week_label", text = (copy.week_label or ""):upper(), style = "micro", color = "secondary",
+            x = x, y = y, w = w, lines = 1 }) + t:space(2)
+        local n = #model.week
+        local slot = w / n
+        local bw = math.floor(slot * 0.5)
+        for i, d in ipairs(model.week) do
+            local fh = model.week_max > 0 and math.floor(chart_h * d.secs / model.week_max) or 0
+            local bx = math.floor(x + (i - 1) * slot + (slot - bw) / 2)
+            nodes[#nodes + 1] = { kind = "rule", id = "week_base_" .. i, x = bx, y = y + chart_h - t.hairline, w = bw,
+                h = t.hairline, color = "hairline" }
+            if fh > 0 then
+                nodes[#nodes + 1] = { kind = "box", id = "week_bar_" .. i, x = bx, y = y + chart_h - fh, w = bw, h = fh,
+                    fill = i == n and "text" or "secondary" }
+            end
+            nodes[#nodes + 1] = { kind = "text", id = "week_day_" .. i, x = math.floor(x + (i - 1) * slot), y = y + chart_h + t:space(1),
+                w = math.floor(slot), h = t.type.micro.line, text = (copy.week_days or {})[i] or "", style = i == n and "micro_bold" or "micro",
+                color = i == n and "text" or "secondary", max_lines = 1, align = "center" }
+        end
+        y = y + chart_h + t:space(1) + t.type.micro.line + t:space(3)
+    end
+    if copy.total_line and y + t.type.caption.line <= nav_top then
+        text(nodes, t, { id = "total_line", text = copy.total_line, style = "caption", color = "secondary", x = x, y = y, w = w,
+            lines = 1, max_lines = 1 })
+    end
+    return nodes
+end
+
+--[[--
+The Import tab: ways to bring books in, through KOReader's own plugins
+(calibre, OPDS), and the folder to copy books into with a cable.
+@tparam table items { {id, icon or glyph, title, subtitle, available, info} }
+]]
+function ShellLayout.import(t, items, copy)
+    local nodes = {}
+    local x, w = t.margin, t.content_width
+    local y = Layout.header(nodes, t, copy, x, t:space(3), w, true) + t:space(3)
+    y = titleRow(nodes, t, {}, copy, x, y, w) + t:space(3)
+    local nav_top = Layout.navBar(nodes, t, copy, t.height)
+    local icon = math.floor(t:mm(6))
+    for i, it in ipairs(items) do
+        local pad = t:space(3)
+        local tx = x + pad + icon + t:space(3)
+        local tw = w - (tx - x) - pad - (it.info and 0 or math.floor(t:mm(5)))
+        local sub_lines = 3
+        local h = pad * 2 + t.type.label.line + t:space(1) + sub_lines * t.type.caption.line
+        if y + h > nav_top - t:space(2) then
+            sub_lines = 2
+            h = pad * 2 + t.type.label.line + t:space(1) + sub_lines * t.type.caption.line
+            if y + h > nav_top - t:space(2) then break end
+        end
+        local color = it.available == false and "secondary" or "text"
+        nodes[#nodes + 1] = { kind = "box", id = "import_box_" .. i, x = x, y = y, w = w, h = h, radius = Layout.radius(t),
+            border = it.info and "hairline" or "text", bw = t.hairline }
+        nodes[#nodes + 1] = { kind = it.glyph and "glyph" or "icon", id = "import_icon_" .. i, name = it.glyph or it.icon,
+            x = x + pad, y = y + pad, w = icon, h = icon, color = color }
+        nodes[#nodes + 1] = { kind = "text", id = "import_title_" .. i, x = tx, y = y + pad, w = tw, h = t.type.label.line,
+            text = it.title, style = "label", color = color, max_lines = 1 }
+        nodes[#nodes + 1] = { kind = "text", id = "import_sub_" .. i, x = tx, y = y + pad + t.type.label.line + t:space(1), w = tw,
+            h = sub_lines * t.type.caption.line, text = it.subtitle or "", style = "caption", color = "secondary",
+            max_lines = sub_lines }
+        if not it.info then
+            local cw = math.floor(t:mm(4.5))
+            nodes[#nodes + 1] = { kind = "icon", id = "import_chevron_" .. i, name = "chevron.right",
+                x = x + w - pad - cw, y = y + math.floor((h - cw) / 2), w = cw, h = cw, color = color }
+            nodes[#nodes + 1] = { kind = "tap", id = "import_tap_" .. i, x = x, y = y, w = w, h = h,
+                action = { type = "import", id = it.id } }
+        end
+        y = y + h + t:space(3)
+    end
+    return nodes
 end
 
 return ShellLayout

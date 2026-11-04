@@ -129,7 +129,7 @@ test("taps open books, and the tabs stay in Sereno", function()
         end
     end
     -- every tab is a Sereno screen: KOReader's file manager is never asked
-    for _i, tab in ipairs({ "library", "history", "collections", "search", "home" }) do
+    for _i, tab in ipairs({ "library", "history", "stats", "import", "search", "home" }) do
         truthy(tapWhere(function(a) return a.type == "nav" and a.target == tab end), "tab " .. tab)
         eq(home.tab, tab)
         eq(S.shown[#S.shown], home, "still the same Sereno window")
@@ -138,6 +138,13 @@ test("taps open books, and the tabs stay in Sereno", function()
         truthy(#bb.calls > 2, tab .. " drew something")
     end
     eq(#S.fm_calls, 0, "no detour through KOReader's file manager")
+    -- Collections: the Library's first tile
+    home:showTab("library")
+    truthy(tapWhere(function(a) return a.type == "nav" and a.target == "collections" end), "Collections tile")
+    eq(home.tab, "collections")
+    local lib_active
+    for _i, n in ipairs(home.nodes) do if n.id == "nav_library" then lib_active = n.style == "micro_bold" end end
+    truthy(lib_active, "Library stays marked in the tab bar")
     -- the library lists the books folder, opens books, sorts
     home:showTab("library")
     eq(home.browse.path, dir)
@@ -146,6 +153,27 @@ test("taps open books, and the tabs stay in Sereno", function()
     eq(home.states.library.sort, "author")
     truthy(tapWhere(function(a) return a.type == "open" end), "a book")
     truthy(#S.opened >= 1, "a book was opened")
+end)
+
+test("Stats reads KOReader's statistics database; Import opens KOReader's plugins", function()
+    local fm = package.loaded["apps/filemanager/filemanager"].instance
+    local opened = {}
+    fm.calibre = {}
+    fm.opds = { onShowOPDSCatalog = function() opened[#opened + 1] = "opds" end }
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    -- no database: a friendly empty state
+    local stats = p:readingStats()
+    eq(stats.empty, true)
+    local home = p:showHome("import")
+    local ids = {}
+    for _i, it in ipairs(home.import_items) do ids[#ids + 1] = it.id end
+    eq(table.concat(ids, ","), "calibre_connect,opds,calibre_search,cable")
+    local n0 = #S.events
+    home.on_action({ type = "import", id = "calibre_connect" }, home)
+    eq(S.events[n0 + 1], "StartWirelessConnection", "KOReader's calibre plugin connects")
+    home.on_action({ type = "import", id = "opds" }, home)
+    eq(opened[1], "opds", "KOReader's OPDS browser")
+    fm.calibre, fm.opds = nil, nil
 end)
 
 test("the library goes into folders and back, and pages with swipes", function()

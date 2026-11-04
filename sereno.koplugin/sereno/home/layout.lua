@@ -341,8 +341,9 @@ local function navBar(nodes, t, copy, bottom)
     for i, item in ipairs(items) do
         local sx = math.floor(t.margin + (i - 1) * slot)
         local color = item.active and "text" or "secondary"
-        if item.icon then
-            nodes[#nodes + 1] = { kind = "icon", id = "nav_icon_" .. item.id, name = item.icon, x = sx + math.floor((slot - icon) / 2), y = top, w = icon, h = icon, color = color }
+        if item.icon or item.glyph then
+            nodes[#nodes + 1] = { kind = item.glyph and "glyph" or "icon", id = "nav_icon_" .. item.id, name = item.glyph or item.icon,
+                x = sx + math.floor((slot - icon) / 2), y = top, w = icon, h = icon, color = color }
         end
         nodes[#nodes + 1] = { kind = "text", id = "nav_" .. item.id, x = sx, y = top + icon + t:space(1), w = math.floor(slot), h = micro.line,
             text = item.label, style = item.active and "micro_bold" or "micro", color = color, max_lines = 1, align = "center" }

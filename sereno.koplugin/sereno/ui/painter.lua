@@ -13,7 +13,7 @@ Node kinds:
   circle  { fill, border, bw }           -- round buttons
   glyph   { name, color }                -- small vector symbols drawn here:
                                             moon, sun, power, restart, chevron_down,
-                                            chevron_up, folder, dots
+                                            chevron_up, folder, dots, chart, download
   slider  { fraction, ticks = {0..1} }   -- track, fill, knob, chapter ticks
   image   { file }                       -- an image file (Sereno's mark), scaled to fit
   page    -- a miniature page (sereno/reader/panel.lua)
@@ -204,6 +204,28 @@ function Painter:paintGlyph(bb, x, y, node)
         local fy = y + math.floor((h - fh) / 2)
         bb:paintRect(x, fy - math.floor(fh * 0.16), math.floor(w * 0.42), math.floor(fh * 0.2), ink)
         bb:paintBorder(x, fy, w, fh, stroke, ink)
+    elseif name == "chart" then
+        -- three bars on a base line
+        local bw = math.max(2, math.floor(w * 0.18))
+        local base = y + h - stroke
+        bb:paintRect(x, base, w, stroke, ink)
+        for k, frac in ipairs({ 0.45, 0.85, 0.65 }) do
+            local bh = math.floor((h - stroke) * frac)
+            bb:paintRect(x + math.floor(w * (0.12 + (k - 1) * 0.3)), base - bh, bw, bh, ink)
+        end
+    elseif name == "download" then
+        -- an arrow down into a tray
+        local sx = cx - math.floor(stroke / 2)
+        bb:paintRect(sx, y, stroke, math.floor(h * 0.62), ink)
+        local head = math.floor(w * 0.28)
+        for k = 0, head do
+            local yy = y + math.floor(h * 0.62) - head + k
+            bb:paintRect(cx - head + k, yy, stroke, stroke, ink)
+            bb:paintRect(cx + head - k - stroke + 1, yy, stroke, stroke, ink)
+        end
+        bb:paintRect(x, y + h - stroke, w, stroke, ink)
+        bb:paintRect(x, y + math.floor(h * 0.7), stroke, h - math.floor(h * 0.7), ink)
+        bb:paintRect(x + w - stroke, y + math.floor(h * 0.7), stroke, h - math.floor(h * 0.7), ink)
     elseif name == "dots" then
         local d = math.max(2, math.floor(r * 0.18))
         for k = -1, 1 do bb:paintCircle(cx, cy + k * math.floor(r * 0.55), d, ink) end

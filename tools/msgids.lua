@@ -39,7 +39,7 @@ function Msgids.collect()
     for _, group in ipairs({ RL.PAGES, RL.SPACING, RL.MARGINS, RL.ALIGNMENTS, RL.THEMES }) do
         for _, p in ipairs(group) do add(p.name) end
     end
-    add("Book"); add("Publisher")
+    add("Book"); add("Publisher"); add("Status bar")
     -- the tabs' titles, empty states and sort orders (sereno/shell/browse)
     for _, v in ipairs({ "Library", "Reading", "Collections", "Search", "Favorites", "Title", "Author", "Recent",
         "No books in this folder", "Books you open appear here", "This collection is empty",
