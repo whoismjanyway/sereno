@@ -133,7 +133,7 @@ for dev, name, _dpi in DEVICES:
 
 # reading statistics and import
 for dev, name, _dpi in DEVICES:
-    shots = [(f"{dev}-stats.png", "Stats"), (f"{dev}-import.png", "Import")]
+    shots = [(f"{dev}-stats.png", "Stats"), (f"{dev}-import.png", "Import"), (f"{dev}-transfer.png", "Send over Wi-Fi")]
     tiles = [framed(os.path.join(src, f), label, name) for f, label in shots if os.path.exists(os.path.join(src, f))]
     if len(tiles) == len(shots):
         r = row(tiles)

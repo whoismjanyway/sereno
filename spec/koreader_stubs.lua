@@ -89,6 +89,8 @@ stub("ui/uimanager", {
     scheduleIn = function(_, s, fn) S.scheduled[#S.scheduled + 1] = fn end,
     nextTick = function(_, fn) S.scheduled[#S.scheduled + 1] = fn end,
     unschedule = function() end,
+    preventStandby = function() S.standby = (S.standby or 0) + 1 end,
+    allowStandby = function() S.standby = (S.standby or 0) - 1 end,
     getTopmostVisibleWidget = function() return nil end,
     forceRePaint = function() end,
 })
@@ -167,7 +169,8 @@ stub("docsettings", {
 })
 stub("ui/widget/booklist", { getBookInfo = function() return { been_opened = false } end })
 stub("ui/network/manager", { runWhenOnline = function(_, cb) cb() end, isOnline = function() return true end,
-    isWifiOn = function() return true end })
+    isWifiOn = function() return true end, isConnected = function() return true end,
+    runWhenConnected = function(_, cb) cb() end })
 stub("readcollection", {
     default_collection_name = "favorites",
     coll = {}, coll_settings = {},

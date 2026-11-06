@@ -122,12 +122,16 @@ test("the Stats and Import tabs fit every screen", function()
         fits(scr[1] .. " stats", t, ShellLayout.stats(t, model, copy))
         fits(scr[1] .. " stats empty", t, ShellLayout.stats(t, { empty = true, week = {} }, copy))
         local items = {
-            { id = "calibre_connect", icon = "wifi", title = "Calibre, wirelessly", subtitle = "Send books from calibre on your computer, then tap here." },
+            { id = "wifi_send", icon = "wifi", title = "From a browser, over Wi-Fi", subtitle = "Drag books from your computer or phone into a page on the same Wi-Fi. KOReader stays open." },
+            { id = "cable", icon = "appbar.filebrowser", title = "With a cable", subtitle = "Kindle's USB drive works only outside KOReader: Sereno closes it, you copy books into documents, eject, and reopen KOReader." },
+            { id = "calibre_connect", icon = "book.opened", title = "Calibre, wirelessly", subtitle = "Send books from calibre on your computer, then tap here." },
             { id = "opds", glyph = "download", title = "Online catalogs (OPDS)", subtitle = "Free libraries and your own catalogs." },
-            { id = "calibre_search", icon = "appbar.search", title = "Search calibre metadata", subtitle = "By title, author, series or tag." },
-            { id = "cable", icon = "appbar.filebrowser", title = "With a cable", subtitle = "Copy EPUB files into /mnt/us/documents.", info = true },
         }
-        fits(scr[1] .. " import", t, ShellLayout.import(t, items, Presenter.import(function(s) return s end, {})))
+        local nodes = ShellLayout.import(t, items, Presenter.import(function(s) return s end, {}))
+        fits(scr[1] .. " import", t, nodes)
+        local taps = 0
+        for _k, n in ipairs(nodes) do if n.kind == "tap" and n.action.type == "import" then taps = taps + 1 end end
+        eq(taps, #items, scr[1] .. ": every way to import is on screen")
     end
 end)
 

@@ -297,17 +297,28 @@ function ShellLayout.import(t, items, copy)
     y = titleRow(nodes, t, {}, copy, x, y, w) + t:space(3)
     local nav_top = Layout.navBar(nodes, t, copy, t.height)
     local icon = math.floor(t:mm(6))
+    -- every row shows: the subtitles get shorter (3, 2, 1 lines, then none) until all fit
+    local pad, sub_lines, h = t:space(3), 3, 0
+    -- landscape: two columns
+    local cols = t.landscape and #items > 1 and 2 or 1
+    local rows = math.ceil(#items / cols)
+    local cw = math.floor((w - (cols - 1) * t.gutter) / cols)
+    local top = y
+    while true do
+        local sub = sub_lines > 0 and t:space(1) + sub_lines * t.type.caption.line or 0
+        h = pad * 2 + math.max(icon, t.type.label.line + sub)
+        if sub_lines == 0 or y + rows * (h + t:space(3)) - t:space(3) <= nav_top - t:space(2) then break end
+        sub_lines = sub_lines - 1
+        if sub_lines == 0 then pad = t:space(2) end
+    end
+    local x0 = x
     for i, it in ipairs(items) do
-        local pad = t:space(3)
+        local col = (i - 1) % cols
+        x, w = x0 + col * (cw + t.gutter), cw
+        y = top + math.floor((i - 1) / cols) * (h + t:space(3))
         local tx = x + pad + icon + t:space(3)
         local tw = w - (tx - x) - pad - (it.info and 0 or math.floor(t:mm(5)))
-        local sub_lines = 3
-        local h = pad * 2 + t.type.label.line + t:space(1) + sub_lines * t.type.caption.line
-        if y + h > nav_top - t:space(2) then
-            sub_lines = 2
-            h = pad * 2 + t.type.label.line + t:space(1) + sub_lines * t.type.caption.line
-            if y + h > nav_top - t:space(2) then break end
-        end
+        if y + h > nav_top - t:space(2) then break end
         local color = it.available == false and "secondary" or "text"
         nodes[#nodes + 1] = { kind = "box", id = "import_box_" .. i, x = x, y = y, w = w, h = h, radius = Layout.radius(t),
             border = it.info and "hairline" or "text", bw = t.hairline }
@@ -315,13 +326,15 @@ function ShellLayout.import(t, items, copy)
             x = x + pad, y = y + pad, w = icon, h = icon, color = color }
         nodes[#nodes + 1] = { kind = "text", id = "import_title_" .. i, x = tx, y = y + pad, w = tw, h = t.type.label.line,
             text = it.title, style = "label", color = color, max_lines = 1 }
-        nodes[#nodes + 1] = { kind = "text", id = "import_sub_" .. i, x = tx, y = y + pad + t.type.label.line + t:space(1), w = tw,
-            h = sub_lines * t.type.caption.line, text = it.subtitle or "", style = "caption", color = "secondary",
-            max_lines = sub_lines }
+        if sub_lines > 0 then
+            nodes[#nodes + 1] = { kind = "text", id = "import_sub_" .. i, x = tx, y = y + pad + t.type.label.line + t:space(1), w = tw,
+                h = sub_lines * t.type.caption.line, text = it.subtitle or "", style = "caption", color = "secondary",
+                max_lines = sub_lines }
+        end
         if not it.info then
-            local cw = math.floor(t:mm(4.5))
+            local chev = math.floor(t:mm(4.5))
             nodes[#nodes + 1] = { kind = "icon", id = "import_chevron_" .. i, name = "chevron.right",
-                x = x + w - pad - cw, y = y + math.floor((h - cw) / 2), w = cw, h = cw, color = color }
+                x = x + w - pad - chev, y = y + math.floor((h - chev) / 2), w = chev, h = chev, color = color }
             nodes[#nodes + 1] = { kind = "tap", id = "import_tap_" .. i, x = x, y = y, w = w, h = h,
                 action = { type = "import", id = it.id } }
         end

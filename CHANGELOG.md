@@ -5,7 +5,9 @@
 ### Added
 - **A book page:** the book's title in spaced capitals at the top of every page and the page number centred at the foot, as in a printed book, with margins to hold them. Drawn as a KOReader view module; KOReader's status bar is hidden meanwhile and given back when you choose *Layout → Page style → Status bar*.
 - **Stats tab:** from KOReader's own Reading statistics: the book you're reading (days of reading, time read, progress, time left at your own pace), pages a day and time a day over the last week, days in a row, today's pages and time, the last seven days as bars, and all-time totals. Read-only; Sereno never writes to KOReader's database.
-- **Import tab:** books from calibre over Wi-Fi (KOReader's calibre plugin), online catalogs (KOReader's OPDS browser: Project Gutenberg, Standard Ebooks, your calibre content server, catalogs you add), calibre metadata search, and where to copy books with a cable.
+- **Import tab:** books from calibre over Wi-Fi (KOReader's calibre plugin) and online catalogs (KOReader's OPDS browser: Project Gutenberg, Standard Ebooks, your calibre content server, catalogs you add).
+- **Send books from a browser, over Wi-Fi, without leaving KOReader:** the reader shows an address and a code; open it on a computer or phone on the same Wi-Fi and drop books in. A small upload server (`sereno/transfer/`) runs only while that screen is open, keeps the reader awake, opens and closes the Kindle's firewall port, accepts only e-book files and writes each one under a temporary name until it has arrived whole.
+- **By cable:** on a Kobo, KOReader's USB drive mode from the Import tab. On a Kindle, whose USB drive mode only works outside KOReader, Sereno explains the steps and closes KOReader for you.
 
 ### Fixed (from testing 0.4 on a Kindle)
 - **Exit didn't leave KOReader.** KOReader quits once no window is open; its Exit closed the file manager but Sereno's home screen stayed open, so KOReader kept running. Sereno's windows now close with the file manager, and the quick controls have an *Exit* button.

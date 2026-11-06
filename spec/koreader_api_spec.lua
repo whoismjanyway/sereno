@@ -9,6 +9,11 @@ if not dir then return end
 
 local NEEDED = {
     { "frontend/apps/reader/readerui.lua", "function ReaderUI:onHome" },
+    { "frontend/ui/uimanager.lua", "function UIManager:preventStandby" },
+    { "frontend/ui/uimanager.lua", "function UIManager:allowStandby" },
+    { "frontend/ui/network/manager.lua", "function NetworkMgr:runWhenConnected" },
+    { "frontend/ui/network/manager.lua", "function NetworkMgr:isConnected" },
+    { "frontend/device/devicelistener.lua", "function DeviceListener:onRequestUSBMS" },
     { "frontend/apps/reader/modules/readertoc.lua", "function ReaderToc:getTocTicksFlattened" },
     { "frontend/apps/reader/modules/readertoc.lua", "function ReaderToc:getPreviousChapter" },
     { "frontend/apps/reader/modules/readertoc.lua", "function ReaderToc:getNextChapter" },

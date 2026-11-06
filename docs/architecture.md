@@ -34,6 +34,9 @@ sereno.koplugin/
     ├── reader/folio.lua       the book page: running head and page number (a ReaderView view module)
     ├── stats/stats.lua        ✱ reading statistics: streak, averages, time left
     ├── stats/source.lua       reads KOReader's statistics.sqlite3 (read-only)
+    ├── transfer/http.lua      ✱ request parsing, safe file names, the upload page
+    ├── transfer/server.lua    ✱ non-blocking upload server (LuaSocket passed in), polled by a timer
+    ├── transfer/layout.lua    ✱ the "Send books over Wi-Fi" screen
     ├── reader/
     │   ├── layout.lua         ✱ the page in pt/mm (size, spacing, margins, alignment, paragraphs) → KOReader settings and style tweaks
     │   ├── panel.lua          ✱ the Text panel (font, size, page) as positioned nodes, and its miniature pages
@@ -63,7 +66,9 @@ sereno.koplugin/
 | Collections | `ReadCollection` |
 | Book page | `ReaderView:registerViewModule("sereno_folio", …)`; `ReaderFooter:applyFooterMode` to hide and give back the status bar |
 | Reading statistics | `settings/statistics.sqlite3` through `lua-ljsqlite3` (read-only) |
-| Import | The calibre plugin (`StartWirelessConnection`, `CalibreSearch`) and the OPDS plugin (`onShowOPDSCatalog`) |
+| Import | The calibre plugin (`StartWirelessConnection`) and the OPDS plugin (`onShowOPDSCatalog`) |
+| Send over Wi-Fi | LuaSocket (`socket.bind`, non-blocking `accept`/`receive`/`send`) polled with `UIManager:scheduleIn`; `NetworkMgr:runWhenConnected`; `UIManager:preventStandby` / `allowStandby`; on Kindle, `iptables` rules added and removed as the SSH plugin does |
+| By cable | `RequestUSBMS` when `Device:canToggleMassStorage()` (Kobo, Cervantes); on Kindle, KOReader's `Exit` so Amazon's USB drive mode can start |
 | Unified settings | A `TouchMenu` with Sereno's tab followed by `ui.menu.tab_item_table` (KOReader's own tabs) |
 | Settings tab icon | `sereno.logo.svg` copied into KOReader's user icons folder (`<data>/icons`) |
 | Sleep screen | `screensaver_type = "random_image"` with `screensaver_dir` = Sereno's folder (previous values kept and restored); `ui/elements/screensaver_menu` for KOReader's own options; `onSuspend` / `onResume` |

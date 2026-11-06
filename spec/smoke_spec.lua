@@ -167,13 +167,56 @@ test("Stats reads KOReader's statistics database; Import opens KOReader's plugin
     local home = p:showHome("import")
     local ids = {}
     for _i, it in ipairs(home.import_items) do ids[#ids + 1] = it.id end
-    eq(table.concat(ids, ","), "calibre_connect,opds,calibre_search,cable")
+    eq(table.concat(ids, ","), "wifi_send,cable,calibre_connect,opds")
     local n0 = #S.events
     home.on_action({ type = "import", id = "calibre_connect" }, home)
     eq(S.events[n0 + 1], "StartWirelessConnection", "KOReader's calibre plugin connects")
     home.on_action({ type = "import", id = "opds" }, home)
     eq(opened[1], "opds", "KOReader's OPDS browser")
     fm.calibre, fm.opds = nil, nil
+end)
+
+test("Import by cable: USB drive on a Kobo; on a Kindle, close KOReader with steps", function()
+    local Device = package.loaded["device"]
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    local n0 = #S.events
+    rawset(Device, "canToggleMassStorage", function() return true end)
+    p:runImport("cable")
+    eq(S.events[n0 + 1], "RequestUSBMS", "KOReader's own USB mode")
+    rawset(Device, "canToggleMassStorage", nil)
+    rawset(Device, "isKindle", function() return true end)
+    local shown = #S.shown
+    p:runImport("cable")
+    local box = S.shown[shown + 1]
+    truthy(box and box.text and box.text:find("folder", 1, true) and box.text:find("KUAL", 1, true), "the steps")
+    eq(box.ok_text, "Close KOReader")
+    box.ok_callback()
+    eq(S.events[#S.events], "Exit", "KOReader closes, so the Kindle's USB drive mode can start")
+    rawset(Device, "isKindle", nil)
+end)
+
+test("Send over Wi-Fi: the screen starts a server, keeps the reader awake, stops on close", function()
+    local p = Sereno:new{ ui = newUI("filemanager") }
+    -- this luajit has no LuaSocket: the row says so and the screen still opens safely
+    local fake_listener = { settimeout = function() end, accept = function() end, close = function(self) self.closed = true end }
+    package.loaded["socket"] = {
+        bind = function() return fake_listener end,
+        udp = function() return { setpeername = function() end, getsockname = function() return "192.168.1.50" end, close = function() end } end,
+    }
+    p.can_transfer = nil
+    truthy(p:canTransfer(), "LuaSocket found")
+    local standby = S.standby or 0
+    local scheduled = #S.scheduled
+    local screen = p:showTransfer()
+    eq(S.standby, standby + 1, "the reader stays awake")
+    for i = scheduled + 1, #S.scheduled do S.scheduled[i]() end
+    local url
+    for _i, n in ipairs(screen.nodes) do if n.id == "url" then url = n.text end end
+    eq(url, "http://192.168.1.50:8181")
+    screen:onClose()
+    truthy(fake_listener.closed, "the server stops with its screen")
+    eq(S.standby, standby, "and the reader may sleep again")
+    package.loaded["socket"] = nil
 end)
 
 test("Exit leaves KOReader: Sereno's windows close with the file manager", function()

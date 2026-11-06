@@ -256,14 +256,14 @@ for _, d in ipairs(DEVICES) do
                 end,
                 import_items = function()
                     return {
-                        { id = "calibre_connect", icon = "wifi", title = _("Calibre, wirelessly"),
+                        { id = "wifi_send", icon = "wifi", title = _("From a browser, over Wi-Fi"),
+                          subtitle = _("Drag books from your computer or phone into a page on the same Wi-Fi. KOReader stays open.") },
+                        { id = "calibre_connect", icon = "book.opened", title = _("Calibre, wirelessly"),
                           subtitle = _("Send books from calibre on your computer: in calibre, Connect/share → Start wireless device connection, then tap here.") },
                         { id = "opds", glyph = "download", title = _("Online catalogs (OPDS)"),
                           subtitle = _("Free libraries such as Project Gutenberg and Standard Ebooks, your calibre content server, or any catalog you add.") },
-                        { id = "calibre_search", icon = "appbar.search", title = _("Search calibre metadata"),
-                          subtitle = _("Find books you sent from calibre by title, author, series or tag.") },
-                        { id = "cable", icon = "appbar.filebrowser", title = _("With a cable"), info = true,
-                          subtitle = string.format(_("Copy EPUB files into %s on your reader; they appear in the Library."):gsub("%%1", "%%s"), "/mnt/us/documents") },
+                        { id = "cable", icon = "appbar.filebrowser", title = _("With a cable"),
+                          subtitle = string.format(_("Kindle's USB drive works only outside KOReader: Sereno closes it, you copy books into %1, eject, and reopen KOReader."):gsub("%%1", "%%s"), "documents") },
                     }
                 end,
             },
@@ -297,6 +297,23 @@ for _, d in ipairs(DEVICES) do
         painter:paint(bb, nodes)
         painter:free()
         writePGM(bb, string.format("%s/%s-controls.pgm", out_dir, d.id))
+        -- the "Send books over Wi-Fi" screen, with a few books received
+        do
+            local TransferLayout = require("sereno/transfer/layout")
+            local tp = Painter.new(home.theme)
+            bb:fill(Blitbuffer.COLOR_WHITE)
+            tp:paint(bb, TransferLayout.layout(home.theme, { phase = "running", url = "http://192.168.1.23:8181", code = "4821",
+                received = { { name = "Pride and Prejudice.epub", bytes = 774144 }, { name = "Moby Dick.epub", bytes = 1258291 },
+                    { name = "The Great Gatsby.epub", bytes = 297000 } } }, {
+                title = _("Send books over Wi-Fi"), connecting = _("Connecting to Wi-Fi…"),
+                open = _("On a computer or phone on the same Wi-Fi, open this address in a browser:"),
+                code = _("Then type this code:"),
+                keep = _("Keep this screen open while books are sending. The reader stays awake until you tap Stop."),
+                received = _("Received"), nothing_yet = _("Nothing yet. Books you send appear here and in the Library."),
+                receiving = _("receiving…"), stop = _("Stop") }))
+            tp:free()
+            writePGM(bb, string.format("%s/%s-transfer.pgm", out_dir, d.id))
+        end
         -- Sereno's sleep screen (portrait), with the book being read
         do
             local SleepLayout = require("sereno/sleep/layout")

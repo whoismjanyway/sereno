@@ -11,7 +11,7 @@ Sereno is a KOReader plugin that replaces the interface you see every day:
 - **One settings screen:** Sereno's own tab (the book mark) next to all of KOReader's tabs, unchanged, so every KOReader option still works and nothing Sereno adds gets mixed into KOReader's pages.
 - **Sleep screens that keep working:** KOReader's own sleep screen options (covers, your images and folders, messages) are untouched, and Sereno adds an optional cover-and-progress sleep screen.
 - **A book page:** the title as a running head and the page number at the foot, like a printed book.
-- **Reading statistics** and **Import** (calibre over Wi-Fi, OPDS catalogs such as Project Gutenberg and Standard Ebooks) as tabs of their own.
+- **Reading statistics** and **Import** as tabs of their own: send books from a browser over Wi-Fi (KOReader stays open), by cable (Kindle and Kobo), from calibre, or from OPDS catalogs such as Project Gutenberg and Standard Ebooks.
 - **Bars in the book:** tap the top or bottom of a page for a toolbar (Home, text & page, contents, bookmarks, search, KOReader's menu) and a progress bar with chapter marks, chapter skips and *Back to page …*.
 - **A contextual home screen** designed from the physical size of your screen, not its pixel count.
 - **Print-like page counts, word counts and readability** for every book in your library, computed without opening the books.
@@ -56,7 +56,14 @@ Everything goes through KOReader's public extension points: the bars are touch z
 
 **Stats** shows what KOReader's Reading statistics plugin records: the book you're reading (days of reading, time read, progress and time left at your own pace), pages and time a day over the last week, days in a row, today, the last seven days as bars, and all-time totals. Sereno only reads that database.
 
-**Import** brings books in through KOReader's own plugins: *Calibre, wirelessly* (start the wireless device connection in calibre, then tap), *Online catalogs (OPDS)* (Project Gutenberg, Standard Ebooks, your calibre content server, or any catalog you add), *Search calibre metadata*, and the folder to copy books into with a cable.
+**Import** brings books in four ways:
+
+- **From a browser, over Wi-Fi.** The reader shows an address and a 4-digit code. On a computer or phone on the same Wi-Fi, open the address, type the code and drop books in. KOReader stays open, and the books appear in the Library. The upload page runs only while that screen is open: the reader stays awake meanwhile, and *Stop* closes everything (on a Kindle, it also closes the firewall port it opened, as KOReader's SSH plugin does). Only e-book files are accepted, and a book is renamed into place only once it has arrived whole.
+- **With a cable.** On a Kobo, the reader becomes a USB drive from inside KOReader. On a Kindle, the USB drive belongs to Amazon's software and works only once KOReader is closed, so Sereno explains the steps and closes KOReader for you: connect the cable, copy books into `documents`, eject, and open KOReader again from KUAL.
+- **Calibre, wirelessly**, through KOReader's calibre plugin (start the wireless device connection in calibre, then tap).
+- **Online catalogs (OPDS)**, through KOReader's OPDS browser: Project Gutenberg, Standard Ebooks, your calibre content server, or any catalog you add.
+
+![The upload page in a browser](docs/images/shell/upload-page.png)
 
 ![Stats and Import on a Kindle Paperwhite](docs/images/shell/stats-paperwhite.png)
 

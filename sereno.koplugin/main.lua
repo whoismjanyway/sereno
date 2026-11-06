@@ -152,6 +152,8 @@ really leaves KOReader for the Kindle's home screen.
 function Sereno:onCloseWidget()
     if self.ui.document then return end
     self.pending_home = nil
+    -- the upload server stops with its screen
+    if session.transfer then session.transfer:onClose() end
     for _i, key in ipairs({ "controls", "chrome", "settings" }) do
         if session[key] then
             UIManager:close(session[key])
@@ -636,17 +638,27 @@ function Sereno:importItems()
     local host = fm or self.ui
     local has_calibre = host and host.calibre ~= nil
     local has_opds = host and host.opds ~= nil
+    local folder = (Library.homeDir() or ""):match("([^/]+)/*$") or "documents"
+    local cable
+    if Device:canToggleMassStorage() then
+        cable = _("Turn the reader into a USB drive, copy books in, then eject.")
+    elseif Device:isKindle() then
+        cable = T(_("Kindle's USB drive works only outside KOReader: Sereno closes it, you copy books into %1, eject, and reopen KOReader."), folder)
+    else
+        cable = T(_("Copy books into %1 on your reader; they appear in the Library."), Library.homeDir())
+    end
     return {
-        { id = "calibre_connect", icon = "wifi", title = _("Calibre, wirelessly"), available = has_calibre,
+        { id = "wifi_send", icon = "wifi", title = _("From a browser, over Wi-Fi"), available = self:canTransfer(),
+          subtitle = self:canTransfer() and _("Drag books from your computer or phone into a page on the same Wi-Fi. KOReader stays open.")
+              or _("This KOReader has no network module, so this isn't available here.") },
+        { id = "cable", icon = "appbar.filebrowser", title = _("With a cable"),
+          info = not (Device:canToggleMassStorage() or Device:isKindle()), subtitle = cable },
+        { id = "calibre_connect", icon = "book.opened", title = _("Calibre, wirelessly"), available = has_calibre,
           subtitle = has_calibre and _("Send books from calibre on your computer: in calibre, Connect/share → Start wireless device connection, then tap here.")
               or _("Turn on KOReader's calibre plugin (Tools → Plugin management) to use this.") },
         { id = "opds", glyph = "download", title = _("Online catalogs (OPDS)"), available = has_opds,
           subtitle = has_opds and _("Free libraries such as Project Gutenberg and Standard Ebooks, your calibre content server, or any catalog you add.")
               or _("Turn on KOReader's OPDS catalog plugin (Tools → Plugin management) to use this.") },
-        { id = "calibre_search", icon = "appbar.search", title = _("Search calibre metadata"), available = has_calibre,
-          subtitle = _("Find books you sent from calibre by title, author, series or tag.") },
-        { id = "cable", icon = "appbar.filebrowser", title = _("With a cable"), info = true,
-          subtitle = T(_("Copy EPUB files into %1 on your reader; they appear in the Library."), Library.homeDir()) },
     }
 end
 
@@ -658,7 +670,11 @@ function Sereno:runImport(id, home)
     local function missing()
         UIManager:show(InfoMessage:new{ text = _("This needs a KOReader plugin that is turned off. Turn it on in Tools → Plugin management."), timeout = 4 })
     end
-    if id == "calibre_connect" then
+    if id == "wifi_send" then
+        return self:showTransfer()
+    elseif id == "cable" then
+        return self:importByCable()
+    elseif id == "calibre_connect" then
         if not (host and host.calibre) then return missing() end
         UIManager:broadcastEvent(Event:new("StartWirelessConnection"))
     elseif id == "calibre_search" then
@@ -668,6 +684,173 @@ function Sereno:runImport(id, home)
         if not (host and host.opds) then return missing() end
         if host.opds.onShowOPDSCatalog then host.opds:onShowOPDSCatalog() end
     end
+end
+
+--[[--
+By cable. A Kobo (or Cervantes) becomes a USB drive from inside KOReader.
+A Kindle can't: its USB drive mode belongs to Amazon's software and only
+works once KOReader is closed, so Sereno says so and closes KOReader.
+]]
+function Sereno:importByCable()
+    if Device:canToggleMassStorage() then
+        UIManager:broadcastEvent(Event:new("RequestUSBMS"))
+        return
+    end
+    if not Device:isKindle() then return end
+    local ConfirmBox = require("ui/widget/confirmbox")
+    local folder = (Library.homeDir() or ""):match("([^/]+)/*$") or "documents"
+    UIManager:show(ConfirmBox:new{
+        text = T(_([[On a Kindle, the USB drive works only when KOReader is closed.
+
+1. Tap Close KOReader.
+2. Connect the cable: the Kindle shows up on your computer.
+3. Copy your books into the %1 folder.
+4. Eject the Kindle, unplug it, and open KOReader again (from KUAL or your launcher).
+
+The books will be in Sereno's Library. To stay in KOReader, use "From a browser, over Wi-Fi" instead.]]), folder),
+        ok_text = _("Close KOReader"),
+        ok_callback = function() self:exitKOReader() end,
+    })
+end
+
+--- 'Send over Wi-Fi' needs LuaSocket, which KOReader ships on every device.
+function Sereno:canTransfer()
+    if self.can_transfer == nil then self.can_transfer = pcall(require, "socket") and true or false end
+    return self.can_transfer
+end
+
+local function firewall(open, port)
+    if not Device:isKindle() then return end
+    -- the Kindle's firewall drops incoming connections; open the port while the screen is up (as KOReader's SSH plugin does)
+    local flag = open and "-A" or "-D"
+    os.execute(string.format("iptables %s INPUT -p tcp --dport %d -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT", flag, port))
+    os.execute(string.format("iptables %s OUTPUT -p tcp --sport %d -m conntrack --ctstate ESTABLISHED -j ACCEPT", flag, port))
+end
+
+function Sereno:transferCopy()
+    return {
+        title = _("Send books over Wi-Fi"),
+        connecting = _("Connecting to Wi-Fi…"),
+        open = _("On a computer or phone on the same Wi-Fi, open this address in a browser:"),
+        code = _("Then type this code:"),
+        keep = _("Keep this screen open while books are sending. The reader stays awake until you tap Stop."),
+        received = _("Received"),
+        nothing_yet = _("Nothing yet. Books you send appear here and in the Library."),
+        receiving = _("receiving…"),
+        stop = _("Stop"),
+    }
+end
+
+--[[--
+The transfer screen: starts the upload server once Wi-Fi is up, keeps the
+reader awake, and stops everything when it closes.
+]]
+function Sereno:showTransfer()
+    if session.transfer then return session.transfer end
+    local Server = require("sereno/transfer/server")
+    local TransferLayout = require("sereno/transfer/layout")
+    local Http = require("sereno/transfer/http")
+    local state = { phase = "connecting", received = {} }
+    local server, overlay, timer
+    local copy = self:transferCopy()
+
+    local function redraw()
+        if overlay and session.transfer == overlay then
+            overlay:rebuild()
+            UIManager:setDirty(overlay, "ui")
+        end
+    end
+    local function stop()
+        if timer then UIManager:unschedule(timer) timer = nil end
+        if server then
+            server:stop()
+            firewall(false, server.port)
+            server = nil
+        end
+    end
+    local function fail(message)
+        stop()
+        state.phase, state.message = "error", message
+        redraw()
+    end
+    local function start()
+        if session.transfer ~= overlay then return end
+        local socket = require("socket")
+        local dir = Library.homeDir()
+        local ip = Server.localAddress(socket)
+        if not ip then return fail(_("Couldn't find this reader's address on the network. Check that Wi-Fi is connected, then try again.")) end
+        state.code = Server.newCode()
+        local words = {
+            title = copy.title, to = _("Books go to"), keep = _("Keep the Sereno screen open on the e-reader while sending."),
+            code = _("Code shown on the e-reader"), drop = _("Drop books here, or click to choose"),
+            formats = _("EPUB, PDF, MOBI, AZW3, FB2, CBZ, DjVu, TXT…"), done = _("Sent ✓"), lost = _("Connection lost"),
+            wrong_code = _("Wrong code. Check the code on the e-reader."), bad_type = _("Not a book KOReader can open."),
+            bad_name = _("This file name can't be used."), too_big = _("This file is too big."),
+            failed = _("The upload failed. Is the e-reader full?"), not_found = _("Not found."),
+        }
+        server = Server.new{
+            socket = socket, dir = dir, code = state.code, words = words,
+            page = Http.page(Device.model or "e-reader", words),
+            on_file = function(name, _path, bytes)
+                state.received[#state.received + 1] = { name = name, bytes = bytes }
+                Library.invalidate()
+                logger.info("Sereno: received", name, bytes)
+            end,
+        }
+        local ok, err
+        for _i, port in ipairs({ Server.PORT, Server.PORT + 1, Server.PORT + 2 }) do
+            ok, err = server:start(port)
+            if ok then break end
+        end
+        if not ok then
+            server = nil
+            return fail(T(_("Couldn't start the upload page (%1)."), tostring(err)))
+        end
+        firewall(true, server.port)
+        state.phase = "running"
+        state.url = string.format("http://%s:%d", ip, server.port)
+        redraw()
+        local count = 0
+        timer = function()
+            if not server then return end
+            server:step()
+            local busy = server:busy()
+            -- redraw only when something visible changed: a book started or arrived
+            if busy ~= (state.receiving or false) or #state.received ~= count then
+                state.receiving, count = busy, #state.received
+                redraw()
+            end
+            UIManager:scheduleIn(busy and 0.02 or 0.25, timer)
+        end
+        UIManager:scheduleIn(0.25, timer)
+    end
+
+    overlay = Overlay:new{
+        build_nodes = function(theme)
+            return TransferLayout.layout(theme, state, copy), { { x = 0, y = 0, w = theme.width, h = theme.height } }
+        end,
+        on_action = function() return false end,
+        on_close = function()
+            stop()
+            UIManager:allowStandby()
+            session.transfer = nil
+            if #state.received > 0 and session.home then
+                Library.invalidate()
+                session.home:update()
+            end
+        end,
+    }
+    session.transfer = overlay
+    UIManager:preventStandby()
+    UIManager:show(overlay)
+    local NetworkMgr = require("ui/network/manager")
+    if NetworkMgr:isConnected() then
+        UIManager:nextTick(start)
+    else
+        NetworkMgr:runWhenConnected(function() UIManager:nextTick(start) end)
+        -- if Wi-Fi never comes up the screen keeps saying "Connecting…" and Stop still closes it
+    end
+    return overlay
 end
 
 --- The Sereno shell, on `tab` (home by default).
