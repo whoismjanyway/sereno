@@ -6,7 +6,7 @@
 
 Sereno is a KOReader plugin that replaces the interface you see every day:
 
-- **A home screen of tiles:** the book you're reading, Library and Apps, what's up next, your own short task list, the weather where you live, and this week's reading time.
+- **A home screen of tiles:** the book you're reading, Library and Apps, what's up next, your own short task list, today's reading against a daily goal, and this week's reading time.
 - **A complete shell:** Library, Reading, Collections, Stats, Import, Search and Tasks behind one tab bar. You never fall back into KOReader's file browser unless you ask for it.
 - **Quick controls:** swipe down from the top edge for Wi-Fi, night mode, the light, rotation, restart, sleep, and brightness and warmth sliders.
 - **One settings screen:** Sereno's own tab (the book mark) next to all of KOReader's tabs, unchanged, so every KOReader option still works and nothing Sereno adds gets mixed into KOReader's pages.
@@ -36,7 +36,7 @@ Sereno is a KOReader plugin that replaces the interface you see every day:
 - **The date,** with three buttons: settings, Apps (every place in Sereno as a tile) and **+** (Import).
 - **Continue reading:** the book's cover, title, author and progress. Next to it, **Library** and **Apps**.
 - **Up next:** the next book on your shelf. **Tasks:** a short list you keep yourself (tap to tick, hold to delete).
-- **Weather:** tap to choose your town. It updates from [Open-Meteo](https://open-meteo.com) (free, no account) only while Wi-Fi is already on; Sereno never turns Wi-Fi on for it. **This week:** your reading time each day, from KOReader's statistics.
+- **Today:** minutes read today against a daily goal (tap to choose 10 minutes to 2 hours), with a bar and your streak of days in a row. **This week:** your reading time each day. Both come from KOReader's Reading statistics.
 
 ## Getting around
 

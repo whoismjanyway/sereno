@@ -8,7 +8,7 @@
 - **Import tab:** books from calibre over Wi-Fi (KOReader's calibre plugin) and online catalogs (KOReader's OPDS browser: Project Gutenberg, Standard Ebooks, your calibre content server, catalogs you add).
 - **Send books from a browser, over Wi-Fi, without leaving KOReader:** the reader shows an address and a code; open it on a computer or phone on the same Wi-Fi and drop books in. A small upload server (`sereno/transfer/`) runs only while that screen is open, keeps the reader awake, opens and closes the Kindle's firewall port, accepts only e-book files and writes each one under a temporary name until it has arrived whole.
 
-- **A home screen of tiles:** Continue reading, Library, Apps, Up next, Tasks, Weather and This week, under a status line and the date with settings, Apps and Import buttons. *Apps* shows every place in Sereno as tiles; *Tasks* is a short list you keep yourself; the weather comes from Open-Meteo only while Wi-Fi is already on.
+- **A home screen of tiles:** Continue reading, Library, Apps, Up next, Tasks, Today and This week, under a status line and the date with settings, Apps and Import buttons. *Apps* shows every place in Sereno as tiles; *Tasks* is a short list you keep yourself; *Today* shows today's reading against a daily goal you choose, with your streak.
 - **Bars in the book like a Kindle's:** *Back to My Books*, rotation, the light, **Aa**, settings and *…* at the top; *PAGE x OF y*, a slider with the page in its knob, chapter skips, the chapter, bookmarks and search at the bottom.
 - **Aa drops down under the top bar:** font face, sliders for size, line spacing and margins (nine steps), and justification (Publisher, left, justified). *Advanced* opens the full panel.
 

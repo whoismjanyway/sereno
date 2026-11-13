@@ -233,34 +233,6 @@ function Painter:paintGlyph(bb, x, y, node)
         for _i, d in ipairs({ { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } }) do
             bb:paintBorder(x + d[1] * (sq + g), y + d[2] * (sq + g), sq, sq, stroke, ink, math.floor(sq / 5))
         end
-    elseif name == "cloud" or name == "rain" or name == "snow" or name == "storm" or name == "fog" or name == "sun_cloud" then
-        -- a cloud from three discs on a flat base, weather marks under it
-        local top = name == "cloud" and cy or y + math.floor(h * 0.42)
-        if name == "sun_cloud" then
-            -- a solid sun behind the cloud's upper right; the cloud's inside covers what overlaps
-            bb:paintCircle(x + math.floor(w * 0.68), y + math.floor(h * 0.3), math.floor(r * 0.4), ink)
-            top = cy + math.floor(h * 0.12)
-        end
-        local base_y = top + math.floor(r * 0.22)
-        local function cloud(col, grow)
-            bb:paintCircle(x + math.floor(w * 0.32), top, math.floor(r * 0.36) + grow, col)
-            bb:paintCircle(x + math.floor(w * 0.56), top - math.floor(r * 0.18), math.floor(r * 0.46) + grow, col)
-            bb:paintCircle(x + math.floor(w * 0.76), top + math.floor(r * 0.04), math.floor(r * 0.3) + grow, col)
-            bb:paintRect(x + math.floor(w * 0.18) - grow, top, math.floor(w * 0.68) + 2 * grow, base_y - top + grow, col)
-        end
-        cloud(ink, 0)
-        cloud(bg, -stroke)
-        local marks_y = base_y + stroke * 2
-        if name == "rain" or name == "storm" then
-            for k = 0, 2 do
-                local mx = x + math.floor(w * (0.3 + k * 0.2))
-                for j = 0, math.floor(h * 0.18) do bb:paintRect(mx - math.floor(j / 3), marks_y + j, stroke, 1, ink) end
-            end
-        elseif name == "snow" then
-            for k = 0, 2 do bb:paintCircle(x + math.floor(w * (0.3 + k * 0.2)), marks_y + math.floor(h * 0.08) + (k % 2) * stroke * 2, stroke, ink) end
-        elseif name == "fog" then
-            for k = 0, 1 do bb:paintRect(x + math.floor(w * 0.18), marks_y + k * stroke * 3, math.floor(w * 0.64), stroke, ink) end
-        end
     elseif name == "dots_h" then
         local d = math.max(2, math.floor(r * 0.16))
         for k = -1, 1 do bb:paintCircle(cx + k * math.floor(r * 0.6), cy, d, ink) end

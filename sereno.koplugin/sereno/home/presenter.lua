@@ -163,9 +163,12 @@ function Presenter.dashboard(_, status, d, dash, duration)
         tasks = _("Tasks"),
         no_tasks = _("No tasks"),
         more_tasks = _("+%d more"),
-        weather = _("Weather"),
-        weather_set = _("Tap to choose your town."),
-        weather_wait = _("Turn on Wi-Fi to see the weather."),
+        today = _("Today"),
+        goal_of = _("of %d min"),
+        goal_met = _("Goal reached ✓"),
+        streak = _("%d days in a row"),
+        streak_one = _("1 day in a row"),
+        no_streak = _("Read a little to start a streak"),
         this_week = _("This week"),
     }
     local words = { h = _("h"), min = _("min"), less = _("0 min") }
@@ -186,7 +189,7 @@ function Presenter.apps(_, status)
         { id = "import", label = _("Import"), glyph = "download", action = { type = "nav", target = "import" } },
         { id = "search", label = _("Search"), icon = "appbar.search", action = { type = "nav", target = "search" } },
         { id = "tasks", label = _("Tasks"), icon = "check", action = { type = "nav", target = "tasks" } },
-        { id = "weather", label = _("Weather"), glyph = "sun_cloud", action = { type = "weather" } },
+        { id = "controls", label = _("Controls"), glyph = "sun", action = { type = "controls" } },
         { id = "settings", label = _("Settings"), icon = "appbar.settings", action = { type = "settings" } },
     }
     return copy

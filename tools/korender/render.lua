@@ -254,11 +254,11 @@ for _, d in ipairs(DEVICES) do
                     return Stats.summarize{ today = today, days = days, dates = dates, total = { secs = 1123200, books = 48 },
                         book = { title = "The Great Gatsby", pages = 179, read_secs = 31500, read_pages = 140, days = 7, percent = 0.78 } }
                 end,
-                -- the home tiles: a few tasks, the weather, this week's reading
+                -- the home tiles: a few tasks, today's goal, this week's reading
                 dashboard = function()
                     return {
                         tasks = { { text = "Return the library books" }, { text = "Order the next Austen" } },
-                        weather = { place = "Monterrey", temp = "24°", glyph = "sun_cloud", text = _("Partly cloudy") },
+                        goal = { today_secs = 1500, goal_mins = 30, streak = 6 },
                         week = { { secs = 2100 }, { secs = 3120 }, {}, { secs = 3840 }, { secs = 2460 }, { secs = 4680 }, { secs = 1500, today = true } },
                         week_secs = 17700, wifi = true,
                     }

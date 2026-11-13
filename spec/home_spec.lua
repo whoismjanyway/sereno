@@ -143,7 +143,6 @@ local CASES = {
 }
 
 local Dashboard = require("sereno/home/dashboard")
-local Weather = require("sereno/weather/weather")
 
 local function dashboard(t, history, new, dash)
     local m = Context.build(sources(history, new), { now = EVENING })
@@ -159,8 +158,8 @@ local DASH_CASES = {
     { "empty tiles", {} },
     { "full tiles", { tasks = { { text = "Return the library books before Friday afternoon" }, { text = "Buy a reading lamp" },
         { text = "Call Ana" }, { text = "Ticked", done = true } }, week = WEEK, week_secs = 2400, wifi = true,
-        weather = { place = "Waddesdon", temp = "11°", glyph = "rain", text = "Light rain" } } },
-    { "weather waiting", { weather = { place = "Monterrey" }, wifi = false } },
+        goal = { today_secs = 720, goal_mins = 30, streak = 4 } } },
+    { "goal met", { goal = { today_secs = 5400, goal_mins = 30, streak = 1 }, wifi = false } },
 }
 
 for _i, d in ipairs(DEVICES) do
@@ -173,7 +172,7 @@ for _i, d in ipairs(DEVICES) do
                 eq(#problems, 0, table.concat(problems, "; "))
                 local ids = {}
                 for _j, n in ipairs(nodes) do ids[n.id or ""] = n end
-                for _j, id in ipairs({ "hero_tile", "library_tile", "apps_tile", "next_tile", "tasks_tile", "weather_tile", "week_tile",
+                for _j, id in ipairs({ "hero_tile", "library_tile", "apps_tile", "next_tile", "tasks_tile", "goal_tile", "week_tile",
                     "date", "status_right", "btn_settings", "btn_apps", "btn_add" }) do
                     truthy(ids[id], id .. " shown")
                 end
@@ -195,7 +194,7 @@ test("every tap target on the home tiles has an action and is touch-sized", func
             targets[n.action.target or n.action.type] = true
         end
     end
-    for _j, k in ipairs({ "open", "library", "apps", "tasks", "weather", "stats", "settings", "import", "search", "controls", "wifi", "refresh" }) do
+    for _j, k in ipairs({ "open", "library", "apps", "tasks", "goal", "stats", "settings", "import", "search", "controls", "wifi", "refresh" }) do
         truthy(targets[k], k .. " reachable")
     end
 end)
@@ -210,8 +209,10 @@ test("the tiles say what's there", function()
     eq(texts.hero_percent, "38%")
     eq(texts.next_title, "Frankenstein; or, The Modern Prometheus")
     eq(texts.task_1, "Return the library books before Friday afternoon", "open tasks only")
-    eq(texts.weather_temp, "11°")
-    eq(texts.weather_heading, "Waddesdon")
+    eq(texts.goal_heading, "Today")
+    eq(texts.goal_minutes, "12")
+    eq(texts.goal_of, "of 30 min")
+    eq(texts.goal_line, "4 days in a row")
     eq(texts.week_total, "40 min reading")
     local empty = dashboard(t, {}, {}, {})
     local e = {}
@@ -219,39 +220,13 @@ test("the tiles say what's there", function()
     eq(e.hero_heading, "No books yet")
     eq(e.tasks_empty, "No tasks")
     eq(e.week_total, "0 min reading")
-end)
-
-test("weather: places, readings, symbols and when to ask again", function()
-    local place = Weather.parsePlace({ results = { { name = "Monterrey", latitude = 25.6866, longitude = -100.3161, country = "Mexico" } } })
-    eq(place.name, "Monterrey")
-    eq(select(2, Weather.parsePlace({})), "not_found")
-    truthy(Weather.searchUrl("San Pedro Garza García", "es"):find("name=San%20Pedro%20Garza%20Garc%C3%ADa", 1, true))
-    place.unit = "F"
-    local url = Weather.forecastUrl(place)
-    truthy(url:find("latitude=25.6866&longitude=-100.3161", 1, true) and url:find("temperature_unit=fahrenheit", 1, true), url)
-    eq(Weather.parseCurrent({ current = { temperature_2m = 10.6, weather_code = 61 } }).temp, 10.6)
-    eq(Weather.parseCurrent({ error = true }), nil)
-    eq(select(1, Weather.describe(61)), "rain")
-    eq(select(2, Weather.describe(2)), "Partly cloudy")
-    eq(select(1, Weather.describe(96)), "storm")
-    local now = 1800000000
-    local saved = { name = "Monterrey", lat = 25.7, lon = -100.3 }
-    eq(Weather.display(nil, now), nil, "no town: the tile asks for one")
-    eq(Weather.display(saved, now).temp, nil, "no reading yet")
-    truthy(Weather.due(saved, now))
-    local calls = {}
-    local ok = Weather.refresh(saved, now, function(u) calls[#calls + 1] = u return '{"current":{"temperature_2m":23.5,"weather_code":3}}' end,
-        function(body) return { current = { temperature_2m = 23.5, weather_code = 3 } } end)
-    truthy(ok)
-    local shown = Weather.display(saved, now + 60)
-    eq(shown.temp, "24°")
-    eq(shown.glyph, "cloud")
-    eq(Weather.due(saved, now + 60), false, "not again for half an hour")
-    eq(Weather.due(saved, now + Weather.REFRESH_SECS), true)
-    eq(Weather.display(saved, now + Weather.STALE_SECS + 1).temp, nil, "an old reading isn't shown as today's")
-    local failed = { name = "x", lat = 1, lon = 1 }
-    eq(Weather.refresh(failed, now, function() return nil, "timeout" end, function() end), false)
-    eq(Weather.due(failed, now + 60), false, "a failed try waits too, so a bad network doesn't stall the home screen")
+    eq(e.goal_minutes, "0")
+    eq(e.goal_line, "Read a little to start a streak")
+    local met = dashboard(t, {}, {}, DASH_CASES[3][2])
+    for _j, n in ipairs(met) do
+        if n.id == "goal_line" then eq(n.text, "Goal reached ✓") end
+        if n.id == "goal_bar" then eq(n.fraction, 1, "the bar stops full") end
+    end
 end)
 
 test("wrapping shortens instead of overflowing", function()

@@ -270,7 +270,7 @@ for _, dev in ipairs(DEVICES) do
         local status = { time = "19:48", battery = 82 }
         Presenter.present(model, function(s) return s end, status)
         local dash = { tasks = { { text = "Return library books" } }, week = { {}, {}, {}, { secs = 1800 }, {}, {}, { secs = 600, today = true } },
-            week_secs = 2400, weather = { place = "Monterrey", temp = "24°", glyph = "sun_cloud", text = "Partly cloudy" } }
+            week_secs = 2400, goal = { today_secs = 600, goal_mins = 30, streak = 3 } }
         local copy = Presenter.dashboard(function(s) return s end, status, now, dash)
         local nodes = Dashboard.layout(t, Dashboard.view(model, dash, status), copy)
         local problems = Layout.check(t, nodes)

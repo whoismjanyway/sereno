@@ -35,7 +35,6 @@ sereno.koplugin/
     ├── stats/stats.lua        ✱ reading statistics: streak, averages, time left
     ├── stats/source.lua       reads KOReader's statistics.sqlite3 (read-only)
     ├── home/dashboard.lua     ✱ the home screen's tiles
-    ├── weather/weather.lua    ✱ Open-Meteo town search and current weather
     ├── transfer/http.lua      ✱ request parsing, safe file names, the upload page
     ├── transfer/server.lua    ✱ non-blocking upload server (LuaSocket passed in), polled by a timer
     ├── transfer/layout.lua    ✱ the "Send books over Wi-Fi" screen

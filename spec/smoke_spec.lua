@@ -176,14 +176,14 @@ test("Stats reads KOReader's statistics database; Import opens KOReader's plugin
     fm.calibre, fm.opds = nil, nil
 end)
 
-test("home tiles: tasks you add, tick and clear; Apps; the weather tile asks for a town", function()
+test("home tiles: tasks you add, tick and clear; Apps; a daily goal you choose", function()
     local p = Sereno:new{ ui = newUI("filemanager") }
     p.settings:delSetting("tasks")
-    p.settings:delSetting("weather")
+    p.settings:delSetting("daily_goal")
     local home = p:showHome()
     local ids = {}
     for _i, n in ipairs(home.nodes) do ids[n.id or ""] = n end
-    truthy(ids.tasks_tile and ids.weather_tile and ids.week_tile and ids.hero_tile, "the tiles")
+    truthy(ids.tasks_tile and ids.goal_tile and ids.week_tile and ids.hero_tile, "the tiles")
     eq(ids.tasks_empty.text, "No tasks")
     local function tapAction(pred)
         for _i, n in ipairs(home.nodes) do
@@ -218,10 +218,13 @@ test("home tiles: tasks you add, tick and clear; Apps; the weather tile asks for
     eq(apps, 9)
     home:showTab("home")
     shown = #S.shown
-    tapAction(function(a) return a.type == "weather" end)
-    eq(S.shown[shown + 1].title, "Your town or city", "no town yet: asks for one")
-    local data = p:dashboardData()
-    eq(data.weather, nil)
+    tapAction(function(a) return a.type == "goal" end)
+    local picker = S.shown[shown + 1]
+    eq(picker.title, "Read every day for…")
+    picker.buttons[2][1].callback() -- 45 min
+    eq(p.settings:readSetting("daily_goal"), 45)
+    eq(p:dashboardData().goal.goal_mins, 45)
+    p.settings:delSetting("daily_goal")
     p.settings:delSetting("tasks")
 end)
 

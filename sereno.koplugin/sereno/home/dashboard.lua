@@ -10,13 +10,15 @@ The home screen as a page of tiles:
   └───────────────────────────────┘ └─────────┘
   ┌ Up next          › ┐ ┌ Tasks            › ┐
   └────────────────────┘ └────────────────────┘
-  ┌ Monterrey        › ┐ ┌ This week        › ┐
-  │ ☁ 11°  Light rain  │ │ _ _ _ █ _ _ _      │
+  ┌ Today            › ┐ ┌ This week        › ┐
+  │ 12 min  of 30      │ │ _ _ _ █ _ _ _      │
+  │ ▬▬▬▬───  4 days    │ │ 40 min reading     │
   └────────────────────┘ └────────────────────┘
 
 Every tile shows something real: the book you're reading, the next one,
-your own short task list, the weather where you said you are (only when
-Wi-Fi is on), and the week's reading time from KOReader's statistics.
+your own short task list, today's reading against a daily goal you set
+(with your streak), and the week's reading time, both from KOReader's
+statistics.
 
 Pure Lua: Dashboard.layout(t, model, copy) -> nodes
 
@@ -24,7 +26,7 @@ model {
   hero = { file, title, authors, percent } or nil,
   up_next = { file, title, authors } or nil,
   tasks = { {text, done}... },
-  weather = { place, temp, glyph, text } | { place } (no reading yet) | nil (no place set),
+  goal = { today_secs, goal_mins, streak },
   week = { {secs, today}... } (7 days, oldest first), week_secs,
   wifi = true/false/nil, battery, charging, time, date
 }
@@ -222,34 +224,40 @@ local function tasksTile(nodes, t, model, copy, x, y, w, h)
     end
 end
 
-local function weatherTile(nodes, t, model, copy, x, y, w, h)
-    local wx = model.weather
-    local heading = wx and wx.place or copy.weather
-    local cy, pad = tile(nodes, t, "weather", x, y, w, h, heading, { type = "weather" })
+-- Today: minutes read against your daily goal, a bar, and the streak
+local function goalTile(nodes, t, model, copy, x, y, w, h)
+    local cy, pad = tile(nodes, t, "goal", x, y, w, h, copy.today, { type = "goal" })
     local bottom = y + h - pad
-    if not wx then
-        text(nodes, t, { id = "weather_hint", x = x + pad, y = cy, w = w - 2 * pad, text = copy.weather_set,
-            style = "body", color = "secondary", max_lines = math.max(1, lines(t, cy, bottom, "body")) })
-        return
-    end
-    if not wx.temp then
-        text(nodes, t, { id = "weather_hint", x = x + pad, y = cy, w = w - 2 * pad, text = copy.weather_wait,
-            style = "body", color = "secondary", max_lines = math.max(1, lines(t, cy, bottom, "body")) })
-        return
-    end
-    -- the symbol and the temperature on one line, the sky in words under it
-    local big = t.type.display.line
+    local g = model.goal or {}
+    local mins = math.floor((g.today_secs or 0) / 60)
+    local goal = g.goal_mins or 30
+    local cap = t.type.caption.line
+    local bar_h = math.max(t.rule * 2, math.floor(t:mm(1.6)))
     local room = bottom - cy
-    local style = room >= big + t.type.caption.line and "display" or "headline"
-    local ic = math.floor(t.type[style].line * 0.8)
-    local ly = cy + math.max(0, math.floor((room - t.type[style].line - t.type.caption.line) / 2))
-    nodes[#nodes + 1] = { kind = "glyph", id = "weather_icon", name = wx.glyph or "cloud", x = x + pad,
-        y = ly + math.floor((t.type[style].line - ic) / 2), w = ic, h = ic, color = "text" }
-    one(nodes, t, { id = "weather_temp", x = x + pad + ic + t:space(2), y = ly, w = w - 2 * pad - ic - t:space(2),
-        text = wx.temp, style = style })
-    if wx.text and ly + t.type[style].line + t.type.caption.line <= bottom then
-        one(nodes, t, { id = "weather_text", x = x + pad, y = ly + t.type[style].line, w = w - 2 * pad, text = wx.text,
-            style = "caption" })
+    -- the largest number that leaves room for the bar and the streak line
+    local style = "title"
+    for _i, st in ipairs({ "display", "headline", "title" }) do
+        if room >= t.type[st].line + t:space(2) + bar_h + cap then style = st break end
+    end
+    local ly = cy + math.max(0, math.floor((room - t.type[style].line - t:space(2) - bar_h - cap) / 2))
+    -- "12" large, "of 30 min" beside it
+    local big = tostring(mins)
+    local bw = Layout.textWidth(t, big, style) + t:space(1)
+    one(nodes, t, { id = "goal_minutes", x = x + pad, y = ly, w = math.min(bw, w - 2 * pad), text = big, style = style })
+    one(nodes, t, { id = "goal_of", x = x + pad + bw + t:space(1), y = ly + t.type[style].line - cap - t:space(1),
+        w = math.max(0, w - 2 * pad - bw - t:space(1)), text = string.format(copy.goal_of or "of %d min", goal), style = "caption",
+        color = "secondary" })
+    ly = ly + t.type[style].line + t:space(1)
+    nodes[#nodes + 1] = { kind = "bar", id = "goal_bar", x = x + pad, y = ly, w = w - 2 * pad, h = bar_h,
+        fraction = math.min(1, mins / math.max(1, goal)) }
+    ly = ly + bar_h + t:space(1)
+    local line
+    if mins >= goal then line = copy.goal_met
+    elseif (g.streak or 0) > 1 then line = string.format(copy.streak or "%d days in a row", g.streak)
+    elseif (g.streak or 0) == 1 then line = copy.streak_one
+    else line = copy.no_streak end
+    if ly + cap <= bottom + 1 then
+        one(nodes, t, { id = "goal_line", x = x + pad, y = ly, w = w - 2 * pad, text = line or "", style = "caption" })
     end
 end
 
@@ -288,7 +296,7 @@ function Dashboard.view(model, dash, status)
     dash, status = dash or {}, status or {}
     local view = {
         hero = model.hero, up_next = model.up_next or (model.shelf or {})[1],
-        tasks = dash.tasks, weather = dash.weather, week = dash.week, wifi = dash.wifi,
+        tasks = dash.tasks, goal = dash.goal, week = dash.week, wifi = dash.wifi,
         time = status.time, battery = status.battery, charging = status.charging,
     }
     if view.up_next and type(view.up_next.authors) == "table" then
@@ -327,7 +335,7 @@ function Dashboard.layout(t, model, copy)
         local cw = math.floor((rw - gap) / 2)
         upNextTile(nodes, t, model, copy, rx, y, cw, th)
         tasksTile(nodes, t, model, copy, rx + cw + gap, y, rw - cw - gap, th)
-        weatherTile(nodes, t, model, copy, rx, y + th + gap, cw, room - th - gap)
+        goalTile(nodes, t, model, copy, rx, y + th + gap, cw, room - th - gap)
         weekTile(nodes, t, model, copy, rx + cw + gap, y + th + gap, rw - cw - gap, room - th - gap)
         return nodes
     end
@@ -351,7 +359,7 @@ function Dashboard.layout(t, model, copy)
     upNextTile(nodes, t, model, copy, x, y, cw, hb)
     tasksTile(nodes, t, model, copy, x + cw + gap, y, w - cw - gap, hb)
     y = y + hb + gap
-    weatherTile(nodes, t, model, copy, x, y, cw, hc)
+    goalTile(nodes, t, model, copy, x, y, cw, hc)
     weekTile(nodes, t, model, copy, x + cw + gap, y, w - cw - gap, hc)
     return nodes
 end

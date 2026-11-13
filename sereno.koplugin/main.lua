@@ -618,14 +618,12 @@ function Sereno:homeSources()
 end
 
 --[[--
-What the home tiles show besides books: your tasks, the weather (only
-fetched while Wi-Fi is already on) and this week's reading time.
+What the home tiles show besides books: your tasks, today's reading
+against your daily goal, and this week's reading time.
 ]]
 function Sereno:dashboardData()
-    local Weather = require("sereno/weather/weather")
     local data = { tasks = self.settings:readSetting("tasks") or {} }
-    local saved = self.settings:readSetting("weather")
-    data.weather = Weather.display(saved, os.time(), _)
+    data.goal = { goal_mins = self.settings:readSetting("daily_goal") or 30, today_secs = 0, streak = 0 }
     local ok, stats = pcall(self.readingStats, self)
     if ok and stats and stats.week then
         data.week, data.week_secs = {}, 0
@@ -633,110 +631,31 @@ function Sereno:dashboardData()
             data.week[i] = { secs = d.secs, today = i == #stats.week }
             data.week_secs = data.week_secs + (d.secs or 0)
         end
+        data.goal.today_secs, data.goal.streak = stats.today_secs or 0, stats.streak or 0
     end
     if Device:hasWifiToggle() then
         local NetworkMgr = require("ui/network/manager")
         data.wifi = NetworkMgr:isWifiOn() and true or false
-        if data.wifi and Weather.due(saved, os.time()) then
-            -- after the screen is up, so the home screen never waits for the network
-            UIManager:scheduleIn(1, function() self:refreshWeather(false) end)
-        end
     end
     return data
 end
 
-local function httpGetShort(url)
-    local http = require("socket.http")
-    local ltn12 = require("ltn12")
-    local socket = require("socket")
-    local socketutil = require("socketutil")
-    local sink = {}
-    socketutil:set_timeout(4, 8)
-    local code = socket.skip(1, http.request({ url = url, method = "GET", sink = ltn12.sink.table(sink) }))
-    socketutil:reset_timeout()
-    if code ~= 200 then return nil, "HTTP " .. tostring(code) end
-    return table.concat(sink)
-end
-
---- Updates the weather reading; `loud` reports failures (when you asked for it).
-function Sereno:refreshWeather(loud)
-    local Weather = require("sereno/weather/weather")
-    local saved = self.settings:readSetting("weather")
-    if not saved then return end
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        if loud then UIManager:show(InfoMessage:new{ text = _("Turn on Wi-Fi to see the weather."), timeout = 3 }) end
-        return
-    end
-    local ok, err = Weather.refresh(saved, os.time(), httpGetShort, require("json").decode)
-    self.settings:saveSetting("weather", saved)
-    self.settings:flush()
-    if ok then
-        if session.home then session.home:update() end
-    elseif loud then
-        UIManager:show(InfoMessage:new{ text = T(_("Couldn't get the weather (%1)."), tostring(err)), timeout = 3 })
-    end
-end
-
---- The weather tile: choose a town, or update, change it, switch °C/°F, remove.
-function Sereno:weatherDialog()
-    local Weather = require("sereno/weather/weather")
-    local saved = self.settings:readSetting("weather")
-    local function ask()
-        local InputDialog = require("ui/widget/inputdialog")
-        local dialog
-        dialog = InputDialog:new{
-            title = _("Your town or city"),
-            input = saved and saved.name or "",
-            buttons = { {
-                { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
-                { text = _("Find"), is_enter_default = true, callback = function()
-                    local name = dialog:getInputText()
-                    UIManager:close(dialog)
-                    if not name or name:match("^%s*$") then return end
-                    local NetworkMgr = require("ui/network/manager")
-                    NetworkMgr:runWhenOnline(function()
-                        local lang = (G_reader_settings:readSetting("language") or "en"):sub(1, 2)
-                        local place, err = Weather.find(name, httpGetShort, require("json").decode, lang, saved and saved.unit)
-                        if not place then
-                            UIManager:show(InfoMessage:new{ text = err == "not_found" and T(_("Couldn't find %1."), name)
-                                or T(_("Couldn't get the weather (%1)."), tostring(err)) })
-                            return
-                        end
-                        self.settings:saveSetting("weather", place)
-                        self:refreshWeather(true)
-                        if session.home then session.home:update() end
-                    end)
-                end },
-            } },
-        }
-        UIManager:show(dialog)
-        dialog:onShowKeyboard()
-    end
-    if not saved then return ask() end
+--- The Today tile: choose how many minutes a day to aim for.
+function Sereno:goalDialog(home)
     local ButtonDialog = require("ui/widget/buttondialog")
+    local now = self.settings:readSetting("daily_goal") or 30
     local dialog
-    local function item(text, fn)
-        return { { text = text, callback = function() UIManager:close(dialog) fn() end } }
+    local row = {}
+    local buttons = {}
+    for _i, m in ipairs({ 10, 15, 20, 30, 45, 60, 90, 120 }) do
+        row[#row + 1] = { text = (m == now and "✓ " or "") .. T(_("%1 min"), m), callback = function()
+            UIManager:close(dialog)
+            self.settings:saveSetting("daily_goal", m)
+            if home then home:update() end
+        end }
+        if #row == 4 then buttons[#buttons + 1] = row row = {} end
     end
-    dialog = ButtonDialog:new{
-        title = saved.name,
-        buttons = {
-            item(_("Update now"), function() self:refreshWeather(true) end),
-            item(_("Change town"), ask),
-            item(saved.unit == "F" and _("Show °C") or _("Show °F"), function()
-                saved.unit = saved.unit == "F" and "C" or "F"
-                saved.reading = nil
-                self.settings:saveSetting("weather", saved)
-                self:refreshWeather(true)
-                if session.home then session.home:update() end
-            end),
-            item(_("Remove the weather"), function()
-                self.settings:delSetting("weather")
-                if session.home then session.home:update() end
-            end),
-        },
-    }
+    dialog = ButtonDialog:new{ title = _("Read every day for…"), buttons = buttons }
     UIManager:show(dialog)
 end
 
@@ -1050,8 +969,8 @@ function Sereno:onHomeAction(action, home)
         return self:runImport(action.id, home)
     elseif action.type:match("^task_") then
         return self:taskAction(action, home)
-    elseif action.type == "weather" then
-        return self:weatherDialog()
+    elseif action.type == "goal" then
+        return self:goalDialog(home)
     elseif action.type == "settings" then
         return self:showSettings()
     elseif action.type == "controls" then
@@ -1061,7 +980,6 @@ function Sereno:onHomeAction(action, home)
         UIManager:scheduleIn(2, function() if session.home then session.home:update() end end)
         return
     elseif action.type == "refresh" then
-        if self.settings:readSetting("weather") then self:refreshWeather(false) end
         if home then home:update() end
         return
     elseif action.type == "search_input" then
