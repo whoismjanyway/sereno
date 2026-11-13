@@ -167,7 +167,7 @@ test("Stats reads KOReader's statistics database; Import opens KOReader's plugin
     local home = p:showHome("import")
     local ids = {}
     for _i, it in ipairs(home.import_items) do ids[#ids + 1] = it.id end
-    eq(table.concat(ids, ","), "wifi_send,cable,calibre_connect,opds")
+    eq(table.concat(ids, ","), "wifi_send,calibre_connect,opds")
     local n0 = #S.events
     home.on_action({ type = "import", id = "calibre_connect" }, home)
     eq(S.events[n0 + 1], "StartWirelessConnection", "KOReader's calibre plugin connects")
@@ -176,23 +176,53 @@ test("Stats reads KOReader's statistics database; Import opens KOReader's plugin
     fm.calibre, fm.opds = nil, nil
 end)
 
-test("Import by cable: USB drive on a Kobo; on a Kindle, close KOReader with steps", function()
-    local Device = package.loaded["device"]
+test("home tiles: tasks you add, tick and clear; Apps; the weather tile asks for a town", function()
     local p = Sereno:new{ ui = newUI("filemanager") }
-    local n0 = #S.events
-    rawset(Device, "canToggleMassStorage", function() return true end)
-    p:runImport("cable")
-    eq(S.events[n0 + 1], "RequestUSBMS", "KOReader's own USB mode")
-    rawset(Device, "canToggleMassStorage", nil)
-    rawset(Device, "isKindle", function() return true end)
+    p.settings:delSetting("tasks")
+    p.settings:delSetting("weather")
+    local home = p:showHome()
+    local ids = {}
+    for _i, n in ipairs(home.nodes) do ids[n.id or ""] = n end
+    truthy(ids.tasks_tile and ids.weather_tile and ids.week_tile and ids.hero_tile, "the tiles")
+    eq(ids.tasks_empty.text, "No tasks")
+    local function tapAction(pred)
+        for _i, n in ipairs(home.nodes) do
+            if n.kind == "tap" and pred(n.action) then home:onTap(nil, { pos = { x = n.x + 1, y = n.y + 1 } }) return n end
+        end
+    end
+    truthy(tapAction(function(a) return a.target == "tasks" end), "Tasks tile")
+    eq(home.tab, "tasks")
     local shown = #S.shown
-    p:runImport("cable")
-    local box = S.shown[shown + 1]
-    truthy(box and box.text and box.text:find("folder", 1, true) and box.text:find("KUAL", 1, true), "the steps")
-    eq(box.ok_text, "Close KOReader")
-    box.ok_callback()
-    eq(S.events[#S.events], "Exit", "KOReader closes, so the Kindle's USB drive mode can start")
-    rawset(Device, "isKindle", nil)
+    truthy(tapAction(function(a) return a.type == "task_add" end), "Add a task")
+    local dialog = S.shown[shown + 1]
+    dialog.getInputText = function() return "  Return library books  " end
+    dialog.buttons[1][2].callback()
+    p:taskAction({ type = "task_add" }, home)
+    S.shown[#S.shown].getInputText = function() return "Buy a lamp" end
+    S.shown[#S.shown].buttons[1][2].callback()
+    local tasks = p.settings:readSetting("tasks")
+    eq(#tasks, 2)
+    eq(tasks[1].text, "Buy a lamp", "newest first")
+    eq(tasks[2].text, "Return library books", "trimmed")
+    tapAction(function(a) return a.type == "task_toggle" and a.index == 1 end)
+    eq(p.settings:readSetting("tasks")[1].done, true)
+    truthy(tapAction(function(a) return a.type == "task_clear" end), "Clear done appears once something is ticked")
+    eq(#p.settings:readSetting("tasks"), 1)
+    for _i, n in ipairs(home.nodes) do
+        if n.hold_action and n.hold_action.type == "task_delete" then home:onHold(nil, { pos = { x = n.x + 1, y = n.y + 1 } }) break end
+    end
+    eq(#p.settings:readSetting("tasks"), 0, "hold deletes")
+    home:showTab("apps")
+    local apps = 0
+    for _i, n in ipairs(home.nodes) do if n.id and n.id:match("^app_tap_") then apps = apps + 1 end end
+    eq(apps, 9)
+    home:showTab("home")
+    shown = #S.shown
+    tapAction(function(a) return a.type == "weather" end)
+    eq(S.shown[shown + 1].title, "Your town or city", "no town yet: asks for one")
+    local data = p:dashboardData()
+    eq(data.weather, nil)
+    p.settings:delSetting("tasks")
 end)
 
 test("Send over Wi-Fi: the screen starts a server, keeps the reader awake, stops on close", function()
@@ -411,6 +441,14 @@ local function panelUI()
     return ui, events
 end
 
+local function readerAaUI()
+    local ui, events = panelUI()
+    ui.document.getPageCount = function() return 200 end
+    ui.document.getCurrentPage = function() return 40 end
+    ui.document.file = ui.document.file or "/books/a.epub"
+    return ui, events
+end
+
 local function tapOn(panel, pred, hold)
     for _i, n in ipairs(panel.nodes) do
         if n.kind == "tap" and pred(n.action, n) then
@@ -527,6 +565,87 @@ test("the panel fits every screen and tab without overlaps", function()
             eq(#problems, 0, name .. ": " .. table.concat(problems, "; "))
         end
     end
+end)
+
+test("Aa in the bars: the drop-down with sliders, under the top bar", function()
+    local ui, events = readerAaUI()
+    local p = Sereno:new{ ui = ui }
+    p.settings:delSetting("panel_tab")
+    p.settings:saveSetting("reading_spec", { page = "normal" })
+    -- panels left open by the tests before
+    for _i, w in ipairs(S.shown) do if w.name == "sereno_page_panel" then w:onCloseWidget() end end
+    local chrome = p:showChrome()
+    local aa
+    for _i, n in ipairs(chrome.nodes) do if n.kind == "tap" and n.action.type == "panel" then aa = n end end
+    chrome:onTap(nil, { pos = { x = aa.x + 1, y = aa.y + 1 } })
+    local panel = S.shown[#S.shown]
+    local names = {}
+    for _i, w in ipairs(S.shown) do names[#names + 1] = tostring(w.name) end
+    eq(panel.tab, "quick")
+    truthy(panel.top >= aa.y + aa.h, "under the top bar")
+    truthy(panel.bottom < 1448 * 0.75, "the page and the bottom bar stay visible")
+    truthy(#S.closed == 0 or S.closed[#S.closed] ~= chrome, "the bars stay open")
+    local circle
+    for _i, n in ipairs(chrome.nodes) do if n.id == "tool_panel_circle" then circle = n end end
+    eq(circle.fill, "text", "Aa is filled while the panel is open")
+    -- − / + and a tap on the track
+    local before = #events
+    truthy(tapOn(panel, function(a) return a.type == "step" and a.key == "spacing" and a.delta == 1 end), "spacing +")
+    eq(events[before + 1].name, "SetLineSpace")
+    eq(p:currentSpec().spacing, 115)
+    truthy(tapOn(panel, function(a) return a.type == "step" and a.key == "margin" and a.delta == -1 end), "margins −")
+    eq(p:currentSpec().margin, 4)
+    eq(events[#events].name, "SetPageMargins")
+    for _i, n in ipairs(panel.nodes) do
+        if n.kind == "tap" and n.action.type == "seek" and n.action.key == "pt" then
+            panel:onTap(nil, { pos = { x = n.action.x1, y = n.y + 1 } })
+        end
+    end
+    eq(p:currentSpec().pt, 10, "the end of the track is the largest size")
+    truthy(tapOn(panel, function(a) return a.key == "align" and a.value == "publisher" end), "Publisher")
+    eq(p:currentSpec().align, "publisher")
+    -- a theme puts the page's own spacing and margins back
+    truthy(tapOn(panel, function(a) return a.type == "advanced" end), "Advanced")
+    eq(panel.tab, "font", "the full panel")
+    eq(panel.bottom, 1448, "at the bottom")
+    tapOn(panel, function(a) return a.type == "tab" and a.tab == "themes" end)
+    tapOn(panel, function(a) return a.type == "theme" and a.id == "standard" end)
+    eq(p:currentSpec().spacing, nil)
+    eq(p:currentSpec().margin, nil)
+    panel:onClose()
+    for _i, n in ipairs(chrome.nodes) do if n.id == "tool_panel_circle" then circle = n end end
+    eq(circle.fill, nil, "Aa empty again")
+    chrome:onClose()
+    package.loaded["fontlist"] = nil
+end)
+
+test("the Aa drop-down fits every screen", function()
+    local Panel = require("sereno/reader/panel")
+    local Theme = require("sereno/ui/theme")
+    local ReaderLayout = require("sereno/reader/layout")
+    local ChromeLayout = require("sereno/reader/chrome")
+    local fonts = {}
+    for i = 1, 12 do fonts[i] = { name = "Font with a long name " .. i } end
+    for _i, scr in ipairs({ { 600, 800, 167 }, { 758, 1024, 212 }, { 1072, 1448, 300 }, { 1236, 1648, 300 }, { 1860, 2480, 300 }, { 1448, 1072, 300 } }) do
+        local screen = { width = scr[1], height = scr[2], dpi = scr[3] }
+        local t = Theme.new(screen)
+        local _n, geo = ChromeLayout.layout(t, { percent = 0.1, page_label = "141", total_label = "3,255" }, { home = "Back to My Books" })
+        for _j, spec in ipairs({ { page = "normal" }, { page = "normal", pt = 10, spacing = 160, margin = 9, align = "publisher" } }) do
+            local values = ReaderLayout.compute(screen, spec)
+            values.font = "Font with a long name 1"
+            for _k, list in ipairs({ false, true }) do
+                local nodes, top, bottom = Panel.layout(t, values, nil, { tab = "quick", top = geo.top_h, bottom_limit = geo.bottom_y, fonts = fonts, font_list = list })
+                local name = scr[1] .. "x" .. scr[2] .. (list and " fonts" or "")
+                eq(top, geo.top_h)
+                truthy(bottom < geo.bottom_y, name .. ": above the bottom bar (" .. bottom .. " < " .. geo.bottom_y .. ")")
+                local problems = require("sereno/home/layout").check(t, nodes)
+                eq(#problems, 0, name .. ": " .. table.concat(problems, "; "))
+            end
+        end
+    end
+    local PanelWidget = require("sereno/reader/panelwidget")
+    eq(PanelWidget.seekValue({ x0 = 100, x1 = 200, min = 80, max = 160, step = 5 }, 150), 120)
+    eq(PanelWidget.seekValue({ x0 = 100, x1 = 200, min = 1, max = 9, step = 1 }, 0), 1)
 end)
 
 test("a short selection menu, through KOReader's public hooks", function()
@@ -684,7 +803,8 @@ test("taps at the top or bottom show Sereno's bars instead of KOReader's menus",
     local texts = {}
     for _i, n in ipairs(chrome.nodes) do if n.kind == "text" then texts[#texts + 1] = n.text end end
     local all = table.concat(texts, " | ")
-    truthy(all:find("Chapter III", 1, true) and all:find("Page 40 of 200", 1, true), all)
+    truthy(all:find("Chapter III", 1, true) and all:find("PAGE 40 OF 200", 1, true), all)
+    truthy(all:find("Back to My Books", 1, true), all)
     local function tap(pred)
         for _i, n in ipairs(chrome.nodes) do
             if n.kind == "tap" and pred(n.action) then

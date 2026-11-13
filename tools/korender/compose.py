@@ -123,7 +123,7 @@ if os.path.exists(pw):
 # the whole shell on each device: home, library, quick controls, the reader's bars
 for dev, name, _dpi in DEVICES:
     shots = [(f"{dev}.png", "Home"), (f"{dev}-library.png", "Library"), (f"{dev}-controls.png", "Quick controls"),
-             (f"reader-{dev}-bars.png", "In a book")]
+             (f"reader-{dev}-bars.png", "In a book"), (f"reader-{dev}-aa.png", "Aa")]
     tiles = [framed(os.path.join(src, f), label, name) for f, label in shots if os.path.exists(os.path.join(src, f))]
     if len(tiles) == len(shots):
         r = row(tiles)

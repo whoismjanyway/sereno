@@ -68,6 +68,9 @@ function Theme.new(screen)
         caption  = { size = size(-1), leading = 1.3, font = Theme.FONTS.sans },
         body     = { size = size(0),  leading = 1.35, font = Theme.FONTS.sans },
         label    = { size = size(0),  leading = 1.2, font = Theme.FONTS.sans_bold },
+        -- the home tiles' headings, in italic, like a book's running heads
+        title_small = { size = size(0.5), leading = 1.25, font = Theme.FONTS.serif_italic },
+        title_small_upright = { size = size(0.5), leading = 1.25, font = Theme.FONTS.serif },
         title    = { size = size(2),  leading = 1.2, font = Theme.FONTS.serif },
         headline = { size = size(3),  leading = 1.15, font = Theme.FONTS.serif },
         display  = { size = size(5),  leading = 1.05, font = Theme.FONTS.serif },

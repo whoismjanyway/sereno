@@ -142,68 +142,116 @@ local CASES = {
     empty = { {}, {} },
 }
 
+local Dashboard = require("sereno/home/dashboard")
+local Weather = require("sereno/weather/weather")
+
+local function dashboard(t, history, new, dash)
+    local m = Context.build(sources(history, new), { now = EVENING })
+    local status = { time = "1:15", battery = 81 }
+    Presenter.present(m, identity, status)
+    dash = dash or {}
+    local copy = Presenter.dashboard(identity, status, EVENING, dash)
+    return Dashboard.layout(t, Dashboard.view(m, dash, status), copy), copy
+end
+
+local WEEK = { {}, {}, {}, { secs = 2400 }, {}, {}, { secs = 0, today = true } }
+local DASH_CASES = {
+    { "empty tiles", {} },
+    { "full tiles", { tasks = { { text = "Return the library books before Friday afternoon" }, { text = "Buy a reading lamp" },
+        { text = "Call Ana" }, { text = "Ticked", done = true } }, week = WEEK, week_secs = 2400, wifi = true,
+        weather = { place = "Waddesdon", temp = "11°", glyph = "rain", text = "Light rain" } } },
+    { "weather waiting", { weather = { place = "Monterrey" }, wifi = false } },
+}
+
 for _i, d in ipairs(DEVICES) do
     for state, case in pairs(CASES) do
-        test(string.format("%dx%d @%d %s: on screen, nothing overlaps", d.width, d.height, d.dpi, state), function()
-            local t = Theme.new(d)
-            local m = Context.build(sources(case[1], case[2]), { now = EVENING })
-            local copy = Presenter.present(m, identity, { time = "22:05", battery = 81 })
-            local nodes = Layout.home(t, m, copy)
-            local problems = Layout.check(t, nodes)
-            eq(#problems, 0, table.concat(problems, "; "))
-            if state ~= "empty" then
-                local has_hero, has_shelf = false, false
-                for _j, n in ipairs(nodes) do
-                    if n.id == "hero_cover" then has_hero = true end
-                    if n.id == "shelf_cover_1" then has_shelf = true end
+        for _k, dc in ipairs(DASH_CASES) do
+            test(string.format("%dx%d @%d %s, %s: the tiles fit, nothing overlaps", d.width, d.height, d.dpi, state, dc[1]), function()
+                local t = Theme.new(d)
+                local nodes = dashboard(t, case[1], case[2], dc[2])
+                local problems = Layout.check(t, nodes)
+                eq(#problems, 0, table.concat(problems, "; "))
+                local ids = {}
+                for _j, n in ipairs(nodes) do ids[n.id or ""] = n end
+                for _j, id in ipairs({ "hero_tile", "library_tile", "apps_tile", "next_tile", "tasks_tile", "weather_tile", "week_tile",
+                    "date", "status_right", "btn_settings", "btn_apps", "btn_add" }) do
+                    truthy(ids[id], id .. " shown")
                 end
-                truthy(has_hero, "hero shown")
-                truthy(has_shelf, "shelf shown")
-            end
-        end)
+                if state == "reading" then truthy(ids.hero_cover and ids.hero_title, "the book") end
+            end)
+        end
     end
 end
 
-test("every tap target has an action and is at least the touch size high", function()
-    local t = Theme.new(DEVICES[4])
-    local m = Context.build(sources({ "gatsby", "pride" }, { "frank" }), { now = EVENING })
-    local nodes = Layout.home(t, m, Presenter.present(m, identity, {}))
-    local taps = 0
+test("every tap target on the home tiles has an action and is touch-sized", function()
+    local t = Theme.new(DEVICES[1])
+    local nodes = dashboard(t, { "gatsby", "pride" }, { "frank" }, DASH_CASES[2][2])
+    local taps, targets = 0, {}
     for _j, n in ipairs(nodes) do
         if n.kind == "tap" then
             taps = taps + 1
             truthy(n.action and n.action.type, "action")
-            truthy(n.h >= t.touch * 0.99, n.id .. " height")
+            truthy(n.h >= t.touch * 0.99 and n.w >= t.touch * 0.99, n.id .. " size")
+            targets[n.action.target or n.action.type] = true
         end
     end
-    truthy(taps >= 6)
+    for _j, k in ipairs({ "open", "library", "apps", "tasks", "weather", "stats", "settings", "import", "search", "controls", "wifi", "refresh" }) do
+        truthy(targets[k], k .. " reachable")
+    end
 end)
 
-test("big screens show the card, the library tiles and two shelf rows", function()
-    local t = Theme.new(DEVICES[5])
-    local src = sources({ "gatsby", "pride" }, { "frank", "s2" })
-    src.stats = function() return { unread = 128, in_progress = 3, finished = 27 } end
-    for i = 1, 8 do BOOKS["extra" .. i] = { title = "Extra " .. i, percent = 0, status = "new" } end
-    src.new_books = function() return { "frank", "s2", "extra1", "extra2", "extra3", "extra4", "extra5", "extra6" } end
-    local m = Context.build(src, { now = EVENING, shelf_size = 10 })
-    local nodes = Layout.home(t, m, Presenter.present(m, identity, {}))
-    local ids = {}
-    for _j, n in ipairs(nodes) do ids[n.id or ""] = n end
-    truthy(ids.hero_card and ids.hero_card.kind == "box", "hero card")
-    truthy(ids.stat_value_2 and ids.stat_value_2.text == "128", "tiles")
-    truthy(ids.shelf_cover_6, "second shelf row")
-    truthy(ids.nav_icon_home and ids.nav_active, "tab bar with active tab")
-    eq(#Layout.check(t, nodes), 0)
+test("the tiles say what's there", function()
+    local t = Theme.new(DEVICES[3])
+    local nodes, copy = dashboard(t, { "gatsby" }, { "frank" }, DASH_CASES[2][2])
+    local texts = {}
+    for _j, n in ipairs(nodes) do if n.kind == "text" then texts[n.id] = n.text end end
+    eq(copy.date, "Monday 2 November 2026")
+    eq(texts.hero_title, "The Great Gatsby")
+    eq(texts.hero_percent, "38%")
+    eq(texts.next_title, "Frankenstein; or, The Modern Prometheus")
+    eq(texts.task_1, "Return the library books before Friday afternoon", "open tasks only")
+    eq(texts.weather_temp, "11°")
+    eq(texts.weather_heading, "Waddesdon")
+    eq(texts.week_total, "40 min reading")
+    local empty = dashboard(t, {}, {}, {})
+    local e = {}
+    for _j, n in ipairs(empty) do if n.kind == "text" then e[n.id] = n.text end end
+    eq(e.hero_heading, "No books yet")
+    eq(e.tasks_empty, "No tasks")
+    eq(e.week_total, "0 min reading")
 end)
 
-test("small screens use a one-line header and keep the shelf", function()
-    local t = Theme.new(DEVICES[1])
-    local m = Context.build(sources({ "gatsby", "pride" }, { "frank" }), { now = EVENING })
-    local nodes = Layout.home(t, m, Presenter.present(m, identity, {}))
-    local ids = {}
-    for _j, n in ipairs(nodes) do ids[n.id or ""] = n end
-    eq(ids.greeting, nil)
-    truthy(ids.shelf_cover_1, "shelf kept")
+test("weather: places, readings, symbols and when to ask again", function()
+    local place = Weather.parsePlace({ results = { { name = "Monterrey", latitude = 25.6866, longitude = -100.3161, country = "Mexico" } } })
+    eq(place.name, "Monterrey")
+    eq(select(2, Weather.parsePlace({})), "not_found")
+    truthy(Weather.searchUrl("San Pedro Garza García", "es"):find("name=San%20Pedro%20Garza%20Garc%C3%ADa", 1, true))
+    place.unit = "F"
+    local url = Weather.forecastUrl(place)
+    truthy(url:find("latitude=25.6866&longitude=-100.3161", 1, true) and url:find("temperature_unit=fahrenheit", 1, true), url)
+    eq(Weather.parseCurrent({ current = { temperature_2m = 10.6, weather_code = 61 } }).temp, 10.6)
+    eq(Weather.parseCurrent({ error = true }), nil)
+    eq(select(1, Weather.describe(61)), "rain")
+    eq(select(2, Weather.describe(2)), "Partly cloudy")
+    eq(select(1, Weather.describe(96)), "storm")
+    local now = 1800000000
+    local saved = { name = "Monterrey", lat = 25.7, lon = -100.3 }
+    eq(Weather.display(nil, now), nil, "no town: the tile asks for one")
+    eq(Weather.display(saved, now).temp, nil, "no reading yet")
+    truthy(Weather.due(saved, now))
+    local calls = {}
+    local ok = Weather.refresh(saved, now, function(u) calls[#calls + 1] = u return '{"current":{"temperature_2m":23.5,"weather_code":3}}' end,
+        function(body) return { current = { temperature_2m = 23.5, weather_code = 3 } } end)
+    truthy(ok)
+    local shown = Weather.display(saved, now + 60)
+    eq(shown.temp, "24°")
+    eq(shown.glyph, "cloud")
+    eq(Weather.due(saved, now + 60), false, "not again for half an hour")
+    eq(Weather.due(saved, now + Weather.REFRESH_SECS), true)
+    eq(Weather.display(saved, now + Weather.STALE_SECS + 1).temp, nil, "an old reading isn't shown as today's")
+    local failed = { name = "x", lat = 1, lon = 1 }
+    eq(Weather.refresh(failed, now, function() return nil, "timeout" end, function() end), false)
+    eq(Weather.due(failed, now + 60), false, "a failed try waits too, so a bad network doesn't stall the home screen")
 end)
 
 test("wrapping shortens instead of overflowing", function()

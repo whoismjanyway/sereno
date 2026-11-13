@@ -254,10 +254,27 @@ for _, d in ipairs(DEVICES) do
                     return Stats.summarize{ today = today, days = days, dates = dates, total = { secs = 1123200, books = 48 },
                         book = { title = "The Great Gatsby", pages = 179, read_secs = 31500, read_pages = 140, days = 7, percent = 0.78 } }
                 end,
+                -- the home tiles: a few tasks, the weather, this week's reading
+                dashboard = function()
+                    return {
+                        tasks = { { text = "Return the library books" }, { text = "Order the next Austen" } },
+                        weather = { place = "Monterrey", temp = "24°", glyph = "sun_cloud", text = _("Partly cloudy") },
+                        week = { { secs = 2100 }, { secs = 3120 }, {}, { secs = 3840 }, { secs = 2460 }, { secs = 4680 }, { secs = 1500, today = true } },
+                        week_secs = 17700, wifi = true,
+                    }
+                end,
+                tasks = function()
+                    return { { text = "Return the library books" }, { text = "Order the next Austen" },
+                        { text = "Finish chapter 9 before book club on Thursday", done = true } }
+                end,
                 import_items = function()
                     return {
                         { id = "wifi_send", icon = "wifi", title = _("From a browser, over Wi-Fi"),
                           subtitle = _("Drag books from your computer or phone into a page on the same Wi-Fi. KOReader stays open.") },
+                        { id = "calibre_connect", icon = "book.opened", title = _("Calibre, wirelessly"),
+                          subtitle = _("Send books from calibre on your computer: in calibre, Connect/share → Start wireless device connection, then tap here.") },
+                        { id = "opds", glyph = "download", title = _("Online catalogs (OPDS)"),
+                          subtitle = _("Free libraries such as Project Gutenberg and Standard Ebooks, your calibre content server, or any catalog you add.") },
                         { id = "calibre_connect", icon = "book.opened", title = _("Calibre, wirelessly"),
                           subtitle = _("Send books from calibre on your computer: in calibre, Connect/share → Start wireless device connection, then tap here.") },
                         { id = "opds", glyph = "download", title = _("Online catalogs (OPDS)"),
@@ -276,7 +293,7 @@ for _, d in ipairs(DEVICES) do
         print(string.format("%-14s %dx%d @%d dpi -> %s (%d nodes, body face %dpx)", d.id, d.width, d.height, d.dpi, pgm,
             #home.nodes, home:face("body").size))
         -- the Library tab, then the quick controls pulled down over the home screen
-        for _j, tab in ipairs({ "library", "stats", "import" }) do
+        for _j, tab in ipairs({ "library", "stats", "import", "apps", "tasks" }) do
             home.tab = tab
             home:build()
             home:paintTo(bb, 0, 0)
@@ -408,6 +425,10 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                 { id = "bars", align = sereno.align, bars = true,
                   v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
                         b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
+                -- the bars with the Aa drop-down open under the top bar
+                { id = "aa", align = sereno.align, bars = true, panel = "quick",
+                  v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
+                        b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
                 { id = "panel", align = sereno.align, panel = "font",
                   v = { font_size = sereno.font_size, h_margin = sereno.h_margins[1], t_margin = sereno.t_margin,
                         b_margin = sereno.b_margin, line_spacing = sereno.line_spacing } },
@@ -460,11 +481,12 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                     local theme = Theme.new{ width = d.width, height = d.height, dpi = d.dpi,
                         scale_by_size = function(n) return Device.screen:scaleBySize(n) end }
                     local painter = Painter.new(theme)
-                    local nodes = ChromeLayout.layout(theme, {
-                        title = "The Great Gatsby · F. Scott Fitzgerald", chapter = "I", page_label = "1",
+                    local nodes, geo = ChromeLayout.layout(theme, {
+                        title = "The Great Gatsby · F. Scott Fitzgerald", chapter = "Chapter I", page_label = "1",
                         total_label = tostring(total), percent = 0.004, ticks = { 0, 0.11, 0.2, 0.34, 0.47, 0.58, 0.7, 0.79, 0.9 },
-                        can_prev = false, can_next = true,
-                    }, { home = _("Home"), page_of = _("Page %s of %s") })
+                        can_prev = false, can_next = true, panel_open = c.panel == "quick",
+                    }, { home = _("Back to My Books"), page_of = _("Page %s of %s") })
+                    c.geo = geo
                     painter:paint(bb, nodes)
                     painter:free()
                 end
@@ -476,7 +498,8 @@ if os.getenv("KORENDER_READER") == "1" and books_dir then
                         { name = "Noto Sans", file = "fonts/noto/NotoSans-Regular.ttf" },
                         { name = "FreeSans", file = "fonts/freefont/FreeSans.ttf" },
                     }
-                    local panel = PanelWidget:new{ values = sereno, translate = _, tab = c.panel, opts = function()
+                    local panel = PanelWidget:new{ values = sereno, translate = _, tab = c.panel,
+                        top = c.geo and c.geo.top_h, bottom_limit = c.geo and c.geo.bottom_y, opts = function()
                         return { fonts = fonts, font_file = fonts[1].file, themes = {
                             { id = "compact", name = "Compact", spec = { page = "compact" }, builtin = true },
                             { id = "standard", name = "Standard", spec = { page = "normal" }, builtin = true, current = true },

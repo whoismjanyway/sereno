@@ -81,7 +81,7 @@ stub("ffi/util", {
 stub("dispatcher", { registerAction = function() end })
 stub("ui/uimanager", {
     show = function(_, w) S.shown[#S.shown + 1] = w end,
-    close = function(_, w) S.closed[#S.closed + 1] = w end,
+    close = function(_, w) S.closed[#S.closed + 1] = w if type(w) == "table" and w.onCloseWidget then w:onCloseWidget() end end,
     broadcastEvent = function(_, e) S.events[#S.events + 1] = e.name end,
     sendEvent = function(_, e) S.events[#S.events + 1] = e.name end,
     askForRestart = function() S.restarts = S.restarts + 1 end,

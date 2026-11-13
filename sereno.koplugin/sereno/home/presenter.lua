@@ -142,6 +142,67 @@ function Presenter.stats(model, _, status, sep, duration)
     return copy
 end
 
+--[[--
+Words for the home tiles (sereno/home/dashboard).
+@tparam table d os.date("*t")
+@tparam table dash { week_secs } from the dashboard source
+@tparam function duration Stats.duration
+]]
+function Presenter.dashboard(_, status, d, dash, duration)
+    d = d or os.date("*t")
+    dash = dash or {}
+    local copy = {
+        date = fill(_("%1 %2 %3 %4"), _(DAYS[d.wday]), d.day, _(MONTHS[d.month]), d.year),
+        continue_reading = _("Continue reading"),
+        no_book = _("No books yet"),
+        no_book_body = _("Tap here to send books from your computer or phone."),
+        library = _("Library"),
+        apps = _("Apps"),
+        up_next = _("Up next"),
+        nothing_next = _("Nothing new"),
+        tasks = _("Tasks"),
+        no_tasks = _("No tasks"),
+        more_tasks = _("+%d more"),
+        weather = _("Weather"),
+        weather_set = _("Tap to choose your town."),
+        weather_wait = _("Turn on Wi-Fi to see the weather."),
+        this_week = _("This week"),
+    }
+    local words = { h = _("h"), min = _("min"), less = _("0 min") }
+    copy.week_total = fill(_("%1 reading"), duration and duration(dash.week_secs or 0, words)
+        or (math.floor((dash.week_secs or 0) / 60) .. " min"))
+    return copy
+end
+
+--- Words for the Apps tab: every place in Sereno, as tiles.
+function Presenter.apps(_, status)
+    local copy = Presenter.frame(_, status, "apps")
+    copy.title = _("Apps")
+    copy.items = {
+        { id = "library", label = _("Library"), icon = "appbar.filebrowser", action = { type = "nav", target = "library" } },
+        { id = "history", label = _("Reading"), icon = "book.opened", action = { type = "nav", target = "history" } },
+        { id = "collections", label = _("Collections"), icon = "star.empty", action = { type = "nav", target = "collections" } },
+        { id = "stats", label = _("Stats"), glyph = "chart", action = { type = "nav", target = "stats" } },
+        { id = "import", label = _("Import"), glyph = "download", action = { type = "nav", target = "import" } },
+        { id = "search", label = _("Search"), icon = "appbar.search", action = { type = "nav", target = "search" } },
+        { id = "tasks", label = _("Tasks"), icon = "check", action = { type = "nav", target = "tasks" } },
+        { id = "weather", label = _("Weather"), glyph = "sun_cloud", action = { type = "weather" } },
+        { id = "settings", label = _("Settings"), icon = "appbar.settings", action = { type = "settings" } },
+    }
+    return copy
+end
+
+--- Words for the Tasks tab.
+function Presenter.tasks(_, status)
+    local copy = Presenter.frame(_, status, "tasks")
+    copy.title = _("Tasks")
+    copy.add = _("Add a task")
+    copy.empty = _("No tasks. Tap \"Add a task\" to write one down.")
+    copy.clear = _("Clear done")
+    copy.hint = _("Tap a task to tick it off. Hold it to delete it.")
+    return copy
+end
+
 --- Words for the Import tab.
 function Presenter.import(_, status)
     local copy = Presenter.frame(_, status, "import")
@@ -154,7 +215,7 @@ end
 @tparam function _   translation function
 @tparam table status { time = "07:48", battery = 82 (optional), charging = bool }
 @string sep thousands separator ("," by default)
-@treturn table copy for Layout.home
+@treturn table copy (hero fields are filled into the model)
 ]]
 function Presenter.present(model, _, status, sep)
     status = status or {}

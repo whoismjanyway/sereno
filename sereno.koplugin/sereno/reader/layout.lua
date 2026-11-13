@@ -55,9 +55,26 @@ ReaderLayout.MARGINS = {
 }
 
 ReaderLayout.ALIGNMENTS = {
-    { id = "justify", name = "Justified" },
+    { id = "publisher", name = "Publisher" }, -- the book's own alignment
     { id = "left", name = "Left" },
+    { id = "justify", name = "Justified" },
 }
+
+-- The Aa panel's sliders: line spacing (KOReader's percent of the font's
+-- own line height) and margins in nine steps, like the Kindle's 4/9
+ReaderLayout.LINE_SPACING_MIN, ReaderLayout.LINE_SPACING_MAX, ReaderLayout.LINE_SPACING_STEP = 80, 160, 5
+ReaderLayout.MARGIN_LEVELS = {
+    { side_mm = 2, top_mm = 3, bottom_mm = 3, max_chars = 90 },
+    { side_mm = 3.5, top_mm = 4, bottom_mm = 3, max_chars = 85 },
+    { side_mm = 5, top_mm = 5, bottom_mm = 4, max_chars = 75 },   -- Compact's
+    { side_mm = 6.5, top_mm = 6.5, bottom_mm = 5, max_chars = 70 },
+    { side_mm = 8, top_mm = 8, bottom_mm = 6, max_chars = 66 },   -- Normal's
+    { side_mm = 10, top_mm = 9, bottom_mm = 7, max_chars = 62 },
+    { side_mm = 12, top_mm = 10, bottom_mm = 7.5, max_chars = 60 },
+    { side_mm = 14, top_mm = 11, bottom_mm = 8, max_chars = 58 }, -- Roomy's
+    { side_mm = 17, top_mm = 13, bottom_mm = 9, max_chars = 54 },
+}
+ReaderLayout.PAGE_MARGIN_LEVEL = { narrow = 3, normal = 5, wide = 8 }
 
 -- The page, as the panel offers it: three choices, each a pair of margins
 -- and line spacing that belong together (KISS: no separate knobs).
@@ -106,6 +123,10 @@ function ReaderLayout.themeMatches(theme, spec)
     for k, v in pairs(theme.spec) do
         if spec[k] ~= v then return false end
     end
+    -- a slider moved since the theme was picked: not that theme any more
+    for _i, k in ipairs({ "spacing", "margin" }) do
+        if spec[k] ~= nil and theme.spec[k] == nil then return false end
+    end
     return true
 end
 
@@ -139,7 +160,9 @@ function ReaderLayout.spacing(id) return find(ReaderLayout.SPACING, id) or Reade
 function ReaderLayout.margins(id) return find(ReaderLayout.MARGINS, id) or ReaderLayout.MARGINS[2] end
 
 --[[--
-A page description ("spec"): { pt, page, font, align, book_style }.
+A page description ("spec"): { pt, page, font, align, book_style }, and
+the Aa sliders' own choices when moved: spacing (line spacing percent)
+and margin (1..9), which take over from the page's.
 Accepts a page id, nil (Normal), or a spec, including earlier versions'
 (preset names, or separate spacing and margins).
 ]]
@@ -160,7 +183,10 @@ function ReaderLayout.spec(p)
         weight = p.weight or 0,
         -- the book page: title at the top, page number at the bottom
         folio = p.folio ~= false,
-        align = (p.align == "left") and "left" or "justify",
+        align = (p.align == "left" or p.align == "publisher") and p.align or "justify",
+        spacing = tonumber(p.spacing) and math.max(ReaderLayout.LINE_SPACING_MIN,
+            math.min(ReaderLayout.LINE_SPACING_MAX, tonumber(p.spacing))) or nil,
+        margin = tonumber(p.margin) and math.max(1, math.min(#ReaderLayout.MARGIN_LEVELS, math.floor(tonumber(p.margin)))) or nil,
         book_style = p.book_style ~= false,
     }
 end
@@ -229,6 +255,9 @@ function ReaderLayout.compute(screen, preset_or_spec)
     spec.pt = delta
     local page = ReaderLayout.page(spec.page)
     local spacing, margins = ReaderLayout.spacing(page.spacing), ReaderLayout.margins(page.margins)
+    local margin_level = spec.margin or ReaderLayout.PAGE_MARGIN_LEVEL[margins.id] or 5
+    if spec.margin then margins = ReaderLayout.MARGIN_LEVELS[spec.margin] end
+    local line_spacing = spec.spacing or spacing.line_spacing
     local f = ReaderLayout.scaleFactor(screen)
     local pt = ReaderLayout.basePt(ReaderLayout.diagonal(screen)) + delta
     local font_px = pt * screen.dpi / 72
@@ -255,7 +284,8 @@ function ReaderLayout.compute(screen, preset_or_spec)
         h_margins = { h, h },
         t_margin = t,
         b_margin = b,
-        line_spacing = spacing.line_spacing,
+        line_spacing = line_spacing,
+        margin_level = margin_level,
         preset = spec.page,
         font = spec.font,
         weight = spec.weight or 0,
@@ -265,7 +295,7 @@ function ReaderLayout.compute(screen, preset_or_spec)
         book_style = spec.book_style,
     }
     values.physical = ReaderLayout.describe(screen, {
-        font_size = font_size, h_margin = h, t_margin = t, b_margin = b, line_spacing = spacing.line_spacing,
+        font_size = font_size, h_margin = h, t_margin = t, b_margin = b, line_spacing = line_spacing,
     })
     values.physical.pt_nominal = pt
     return values
@@ -278,7 +308,9 @@ function ReaderLayout.with(spec, key, value)
         value = math.max(ReaderLayout.MIN_DELTA, math.min(ReaderLayout.MAX_DELTA, value))
     end
     s[key] = value
-    return s
+    -- picking a page sets its own spacing and margins again
+    if key == "page" then s.spacing, s.margin = nil, nil end
+    return ReaderLayout.spec(s)
 end
 
 ReaderLayout.SETTING_KEYS = { "copt_font_size", "copt_h_page_margins", "copt_t_page_margin", "copt_b_page_margin",
@@ -302,6 +334,7 @@ Alignment is always set; the book style tweaks only when book_style is on.
 ]]
 function ReaderLayout.tweaks(spec)
     local on, off = {}, {}
+    -- "publisher": neither tweak, so the book's own alignment shows
     for align, id in pairs(ReaderLayout.ALIGN_TWEAKS) do
         if align == spec.align then on[#on + 1] = id else off[#off + 1] = id end
     end

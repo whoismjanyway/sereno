@@ -20,6 +20,7 @@ package.path = "sereno.koplugin/?.lua;" .. package.path
 local Theme = require("sereno/ui/theme")
 local Context = require("sereno/home/context")
 local Layout = require("sereno/home/layout")
+local Dashboard = require("sereno/home/dashboard")
 local Presenter = require("sereno/home/presenter")
 
 local out_dir = arg[1] or "previews"
@@ -266,8 +267,12 @@ for _, dev in ipairs(DEVICES) do
             stats = function() return spec.stats end,
         }
         local model = Context.build(sources, { now = now, shelf_size = 10 })
-        local copy = Presenter.present(model, function(s) return s end, { time = "19:48", battery = 82 })
-        local nodes = Layout.home(t, model, copy)
+        local status = { time = "19:48", battery = 82 }
+        Presenter.present(model, function(s) return s end, status)
+        local dash = { tasks = { { text = "Return library books" } }, week = { {}, {}, {}, { secs = 1800 }, {}, {}, { secs = 600, today = true } },
+            week_secs = 2400, weather = { place = "Monterrey", temp = "24°", glyph = "sun_cloud", text = "Partly cloudy" } }
+        local copy = Presenter.dashboard(function(s) return s end, status, now, dash)
+        local nodes = Dashboard.layout(t, Dashboard.view(model, dash, status), copy)
         local problems = Layout.check(t, nodes)
         local file = string.format("%s/%s-%s.svg", out_dir, dev.id, state)
         render(t, nodes, file, dev.name .. " – " .. state)

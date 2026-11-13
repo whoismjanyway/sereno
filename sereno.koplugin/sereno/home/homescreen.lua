@@ -14,6 +14,7 @@ The clock line repaints once a minute through the refresh coordinator.
 
 local Browse = require("sereno/shell/browse")
 local Context = require("sereno/home/context")
+local Dashboard = require("sereno/home/dashboard")
 local Layout = require("sereno/home/layout")
 local Painter = require("sereno/ui/painter")
 local Presenter = require("sereno/home/presenter")
@@ -49,7 +50,7 @@ function HomeScreen:init()
         scale_by_size = function(n) return Screen:scaleBySize(n) end,
     }
     self.painter = Painter.new(self.theme, self.sources and self.sources.cover)
-    self.states = { library = {}, history = {}, collections = {}, search = {}, stats = {}, import = {} }
+    self.states = { library = {}, history = {}, collections = {}, search = {}, stats = {}, import = {}, apps = {}, tasks = {} }
     if Device:isTouchDevice() then
         self.ges_events = {
             Tap = { GestureRange:new{ ges = "tap", range = self.dimen } },
@@ -92,9 +93,20 @@ function HomeScreen:build()
             page_method = opts.page_method, wpm = opts.wpm,
             shelf_size = self.theme.columns >= 8 and 10 or 8,
         })
-        local copy = Presenter.present(self.model, _, status, opts.thousands)
-        self.nodes = Layout.home(self.theme, self.model, copy)
+        Presenter.present(self.model, _, status, opts.thousands)
+        local Stats = require("sereno/stats/stats")
+        local dash = self.sources.dashboard and self.sources.dashboard() or {}
+        local view = Dashboard.view(self.model, dash, status)
+        local copy = Presenter.dashboard(_, status, self.model.date, dash, Stats.duration)
+        self.nodes = Dashboard.layout(self.theme, view, copy)
         self.paging = nil
+    elseif self.tab == "apps" then
+        self.nodes = ShellLayout.apps(self.theme, Presenter.apps(_, status))
+        self.paging = nil
+    elseif self.tab == "tasks" then
+        local tasks = self.sources.tasks and self.sources.tasks() or {}
+        self.nodes, self.paging = ShellLayout.tasks(self.theme, tasks, Presenter.tasks(_, status), self.states.tasks.page)
+        self.states.tasks.page = self.paging.page
     elseif self.tab == "stats" then
         local Stats = require("sereno/stats/stats")
         self.stats_model = (self.sources.reading_stats and self.sources.reading_stats()) or { empty = true, week = {} }
@@ -191,6 +203,7 @@ end
 
 function HomeScreen:onHold(_arg, ges)
     local n = Painter.hit(self.nodes, ges.pos)
+    if n and n.hold_action and self.on_action then self.on_action(n.hold_action, self) return true end
     if n and n.action and n.action.type == "open" and self.on_hold then self.on_hold(n.action.file, self) end
     return true
 end
@@ -251,7 +264,7 @@ function HomeScreen:onShow()
                 local n = self.status_index and self.nodes[self.status_index]
                 if n then
                     local text = status.time or ""
-                    if status.battery then
+                    if status.battery and n.clock ~= "time" then
                         text = text .. " · " .. status.battery .. "%" .. (status.charging and " +" or "")
                     end
                     n.text = text

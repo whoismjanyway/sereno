@@ -287,7 +287,7 @@ end
 
 --[[--
 The Import tab: ways to bring books in, through KOReader's own plugins
-(calibre, OPDS), and the folder to copy books into with a cable.
+(Wi-Fi from a browser, calibre, OPDS).
 @tparam table items { {id, icon or glyph, title, subtitle, available, info} }
 ]]
 function ShellLayout.import(t, items, copy)
@@ -341,6 +341,115 @@ function ShellLayout.import(t, items, copy)
         y = y + h + t:space(3)
     end
     return nodes
+end
+
+--[[--
+The Apps tab: every place in Sereno as a tile, an icon over a word, three
+to a row (four in landscape).
+@tparam table copy Presenter.apps()
+]]
+function ShellLayout.apps(t, copy)
+    local nodes = {}
+    local x, w = t.margin, t.content_width
+    local y = Layout.header(nodes, t, copy, x, t:space(3), w, true) + t:space(3)
+    y = titleRow(nodes, t, { back = { type = "nav", target = "home" } }, copy, x, y, w) + t:space(3)
+    local nav_top = Layout.navBar(nodes, t, copy, t.height)
+    local items = copy.items or {}
+    local cols = t.landscape and 5 or 3
+    local rows = math.ceil(#items / cols)
+    local gap = t:space(2)
+    local cw = math.floor((w - (cols - 1) * gap) / cols)
+    local ch = math.floor(math.min(cw * 0.85, (nav_top - t:space(3) - y - (rows - 1) * gap) / rows))
+    local ic = math.floor(math.min(t:mm(7), ch * 0.4))
+    for i, it in ipairs(items) do
+        local cx = x + ((i - 1) % cols) * (cw + gap)
+        local cy = y + math.floor((i - 1) / cols) * (ch + gap)
+        nodes[#nodes + 1] = { kind = "box", id = "app_box_" .. i, x = cx, y = cy, w = cw, h = ch, radius = Layout.radius(t),
+            border = "hairline", bw = math.max(1, t.hairline) }
+        local block = ic + t:space(2) + t.type.title_small.line
+        local iy = cy + math.floor((ch - block) / 2)
+        nodes[#nodes + 1] = { kind = it.glyph and "glyph" or "icon", id = "app_icon_" .. i, name = it.glyph or it.icon,
+            x = cx + math.floor((cw - ic) / 2), y = iy, w = ic, h = ic, color = "text" }
+        nodes[#nodes + 1] = { kind = "text", id = "app_label_" .. i, x = cx + t:space(1), y = iy + ic + t:space(2),
+            w = cw - t:space(2), h = t.type.title_small.line, text = it.label, style = "title_small", max_lines = 1,
+            align = "center" }
+        nodes[#nodes + 1] = { kind = "tap", id = "app_tap_" .. i, x = cx, y = cy, w = cw, h = ch, action = it.action }
+    end
+    return nodes
+end
+
+--[[--
+The Tasks tab: a short list you keep yourself. Tap a task to tick it,
+hold it to delete it; "Add a task" asks for the words.
+@tparam table tasks { {text, done}... }
+@treturn table nodes, table paging { page, pages }
+]]
+function ShellLayout.tasks(t, tasks, copy, page)
+    local nodes = {}
+    local x, w = t.margin, t.content_width
+    local y = Layout.header(nodes, t, copy, x, t:space(3), w, true) + t:space(3)
+    y = titleRow(nodes, t, { back = { type = "nav", target = "home" } }, copy, x, y, w) + t:space(2)
+    local nav_top = Layout.navBar(nodes, t, copy, t.height)
+    -- Add a task, and Clear done when something is ticked
+    local bh = t.touch
+    local any_done = false
+    for _i, task in ipairs(tasks) do if task.done then any_done = true end end
+    local add_w = any_done and math.floor((w - t:space(2)) * 0.6) or w
+    nodes[#nodes + 1] = { kind = "box", id = "task_add_box", x = x, y = y, w = add_w, h = bh, radius = math.floor(bh / 2),
+        border = "text", bw = t.hairline }
+    nodes[#nodes + 1] = { kind = "text", id = "task_add", x = x, y = y + math.floor((bh - t.type.label.line) / 2), w = add_w,
+        h = t.type.label.line, text = "+  " .. (copy.add or ""), style = "label", max_lines = 1, align = "center" }
+    nodes[#nodes + 1] = { kind = "tap", id = "task_add_tap", x = x, y = y, w = add_w, h = bh, action = { type = "task_add" } }
+    if any_done then
+        local cx = x + add_w + t:space(2)
+        nodes[#nodes + 1] = { kind = "box", id = "task_clear_box", x = cx, y = y, w = x + w - cx, h = bh, radius = math.floor(bh / 2),
+            border = "hairline", bw = t.hairline }
+        nodes[#nodes + 1] = { kind = "text", id = "task_clear", x = cx, y = y + math.floor((bh - t.type.body.line) / 2), w = x + w - cx,
+            h = t.type.body.line, text = copy.clear or "", style = "body", max_lines = 1, align = "center" }
+        nodes[#nodes + 1] = { kind = "tap", id = "task_clear_tap", x = cx, y = y, w = x + w - cx, h = bh, action = { type = "task_clear" } }
+    end
+    y = y + bh + t:space(3)
+    if #tasks == 0 then
+        nodes[#nodes + 1] = { kind = "text", id = "tasks_empty", x = x, y = y, w = w, h = t.type.body.line * 2,
+            text = copy.empty or "", style = "body", color = "secondary", max_lines = 2 }
+        return nodes, { page = 1, pages = 1 }
+    end
+    local hint_h = t.type.caption.line + t:space(2)
+    local row_h = math.max(t.touch, t.type.body.line * 2) + t:space(1)
+    local per_page = math.max(1, math.floor((nav_top - t:space(2) - hint_h - y) / row_h))
+    local pages = math.max(1, math.ceil(#tasks / per_page))
+    page = math.max(1, math.min(page or 1, pages))
+    local box = math.floor(t:mm(4.5))
+    for k = 1, per_page do
+        local i = (page - 1) * per_page + k
+        local task = tasks[i]
+        if not task then break end
+        local ry = y + (k - 1) * row_h
+        nodes[#nodes + 1] = { kind = "box", id = "task_box_" .. i, x = x, y = ry + math.floor((row_h - box) / 2), w = box, h = box,
+            radius = math.floor(box / 4), border = "text", bw = math.max(2, t.hairline), fill = task.done and "text" or nil }
+        if task.done then
+            nodes[#nodes + 1] = { kind = "icon", id = "task_check_" .. i, name = "check", x = x, y = ry + math.floor((row_h - box) / 2),
+                w = box, h = box, color = "text", invert = true }
+        end
+        -- one or two lines, centred against the box
+        local n = Layout.estimateLines(t, task.text, "body", w - box - t:space(3), 2)
+        nodes[#nodes + 1] = { kind = "text", id = "task_text_" .. i, x = x + box + t:space(3), y = ry + math.floor((row_h - t.type.body.line * n) / 2),
+            w = w - box - t:space(3), h = t.type.body.line * n, text = task.text, style = "body", max_lines = n,
+            color = task.done and "secondary" or "text" }
+        nodes[#nodes + 1] = { kind = "rule", id = "task_rule_" .. i, x = x, y = ry + row_h - t.hairline, w = w, h = t.hairline,
+            color = "hairline" }
+        nodes[#nodes + 1] = { kind = "tap", id = "task_tap_" .. i, x = x, y = ry, w = w, h = row_h,
+            action = { type = "task_toggle", index = i }, hold_action = { type = "task_delete", index = i } }
+    end
+    local hy = y + per_page * row_h + t:space(1)
+    if pages > 1 then
+        nodes[#nodes + 1] = { kind = "text", id = "tasks_pager", x = x, y = hy, w = w, h = t.type.caption.line,
+            text = string.format("%d / %d", page, pages), style = "caption", color = "secondary", max_lines = 1, align = "center" }
+    else
+        nodes[#nodes + 1] = { kind = "text", id = "tasks_hint", x = x, y = hy, w = w, h = t.type.caption.line,
+            text = copy.hint or "", style = "caption", color = "secondary", max_lines = 1, align = "center" }
+    end
+    return nodes, { page = page, pages = pages }
 end
 
 return ShellLayout

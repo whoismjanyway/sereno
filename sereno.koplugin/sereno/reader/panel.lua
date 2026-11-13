@@ -207,7 +207,7 @@ local function fontList(nodes, t, _, values, opts, x, y, w, max_bottom)
         y = y + math.floor((t.touch - t:mm(5)) / 2), w = math.floor(t:mm(5)), h = math.floor(t:mm(5)), color = "text" }
     textNode(nodes, t, { id = "list_title", x = x + math.floor(t:mm(5)), y = y + math.floor((t.touch - t.type.label.line) / 2),
         w = w - math.floor(t:mm(5)), text = _("Font family"), style = "label" })
-    tap(nodes, 0, y, x + w, t.touch, { type = "tab", tab = "font" })
+    tap(nodes, 0, y, x + w, t.touch, { type = "tab", tab = opts.back_tab or "font" })
     y = y + t.touch + t:space(1)
     local per_page = math.max(3, math.floor((max_bottom - y - t.touch) / row_h))
     local pages = math.max(1, math.ceil(#fonts / per_page))
@@ -286,6 +286,123 @@ local function layoutTab(nodes, t, _, values, opts, x, y, w)
     return y + t.type.micro.line
 end
 
+-- one row of the Aa panel: a label on the left, the control after it
+local function quickLabel(nodes, t, id, text, x, y, w, row_h)
+    textNode(nodes, t, { id = "q_label_" .. id, x = x, y = y + math.floor((row_h - t.type.body.line) / 2), w = w,
+        text = text, style = "body" })
+end
+
+-- − slider +, the value written in the knob; taps on the track set the value
+local function quickSlider(nodes, t, id, x, y, w, row_h, value, min, max, step, label)
+    local btn = t.touch
+    for _i, b in ipairs({ { "minus", "−", x, -1 }, { "plus", "+", x + w - btn, 1 } }) do
+        textNode(nodes, t, { id = "q_" .. id .. "_" .. b[1], x = b[3], y = y + math.floor((row_h - t.type.title.line) / 2),
+            w = btn, text = b[2], style = "title", align = "center", color = "secondary" })
+        tap(nodes, b[3], y, btn, row_h, { type = "step", key = id, delta = b[4] })
+    end
+    local sx, sw = x + btn, w - 2 * btn
+    local fraction = max > min and (value - min) / (max - min) or 0
+    nodes[#nodes + 1] = { kind = "slider", id = "q_" .. id .. "_slider", x = sx, y = y + math.floor((row_h - t.touch) / 2),
+        w = sw, h = t.touch, fraction = fraction, knob_label = label }
+    tap(nodes, sx, y, sw, row_h, { type = "seek", key = id, x0 = sx + math.floor(t.touch / 2),
+        x1 = sx + sw - math.floor(t.touch / 2), min = min, max = max, step = step })
+end
+
+--[[--
+The Aa panel, as the Kindle's: drops down under the reader's top bar.
+
+  Font Face     [ the font  v ]   Advanced
+  Font Size     −  ───(10.5)────  +
+  Line Spacing  −  ─(1.10×)─────  +
+  Margins       −  ────(5/9)────  +
+  Justification [ Publisher | left | justified ]
+
+"Advanced" opens the full panel (themes, bold, page and page style).
+@treturn table nodes, number top, number bottom
+]]
+function Panel.quick(t, values, _, opts)
+    _ = _ or function(s) return s end
+    local nodes = {}
+    local top = opts.top or 0
+    local m = math.floor(t:mm(5))
+    local w = t.width - 2 * m
+    local x = m
+    local y = top + t:space(2)
+    if opts.font_list then
+        opts.back_tab = "quick"
+        -- the list stays above the reader's bottom bar
+        y = fontList(nodes, t, _, values, opts, x, y, w, (opts.bottom_limit or math.floor(t.height * 0.75)) - t:space(4)) + t:space(2)
+    else
+        local row_h = t.touch + t:space(1)
+        local label_w = math.floor(w * 0.3)
+        local cx, cw = x + label_w, w - label_w
+        -- Font Face: a drop-down with the font's name, and Advanced
+        quickLabel(nodes, t, "font", _("Font Face:"), x, y, label_w, row_h)
+        local adv = _("Advanced")
+        local adv_w = textWidth(t, adv, "label") + t:space(2)
+        local dw = cw - adv_w - t:space(2)
+        local dh = t.touch
+        local dy = y + math.floor((row_h - dh) / 2)
+        nodes[#nodes + 1] = { kind = "box", id = "q_font_box", x = cx, y = dy, w = dw, h = dh, border = "hairline", bw = t.hairline }
+        local chev = math.floor(t:mm(3.5))
+        textNode(nodes, t, { id = "q_font_name", x = cx + t:space(2), y = dy + math.floor((dh - t.type.body.line) / 2),
+            w = dw - chev - t:space(5), text = values.font or _("Publisher Default"), style = "body", font_file = opts.font_file })
+        nodes[#nodes + 1] = { kind = "glyph", id = "q_font_chevron", name = "chevron_down", x = cx + dw - chev - t:space(2),
+            y = dy + math.floor((dh - chev) / 2), w = chev, h = chev, color = "text" }
+        tap(nodes, cx, y, dw, row_h, { type = "font_list" })
+        textNode(nodes, t, { id = "q_advanced", x = cx + dw + t:space(2), y = y + math.floor((row_h - t.type.label.line) / 2),
+            w = adv_w, text = adv, style = "label", align = "right" })
+        tap(nodes, cx + dw, y, adv_w + t:space(2), row_h, { type = "advanced" })
+        y = y + row_h + t:space(1)
+
+        local ph = values.physical
+        local pt = (string.format("%.1f", ph.pt_nominal or ph.font_pt):gsub("%.0$", ""))
+        quickLabel(nodes, t, "pt", _("Font Size:"), x, y, label_w, row_h)
+        quickSlider(nodes, t, "pt", cx, y, cw, row_h, values.spec.pt or 0, ReaderLayout.MIN_DELTA, ReaderLayout.MAX_DELTA,
+            ReaderLayout.STEP, pt)
+        y = y + row_h
+
+        quickLabel(nodes, t, "spacing", _("Line Spacing:"), x, y, label_w, row_h)
+        quickSlider(nodes, t, "spacing", cx, y, cw, row_h, values.line_spacing, ReaderLayout.LINE_SPACING_MIN,
+            ReaderLayout.LINE_SPACING_MAX, ReaderLayout.LINE_SPACING_STEP, string.format("%.2f×", values.line_spacing / 100))
+        y = y + row_h
+
+        local levels = #ReaderLayout.MARGIN_LEVELS
+        quickLabel(nodes, t, "margin", _("Margins:"), x, y, label_w, row_h)
+        quickSlider(nodes, t, "margin", cx, y, cw, row_h, values.margin_level or 5, 1, levels, 1,
+            string.format("%d/%d", values.margin_level or 5, levels))
+        y = y + row_h + t:space(1)
+
+        -- Justification: three segments, the chosen one dark
+        quickLabel(nodes, t, "align", _("Justification:"), x, y, label_w, row_h)
+        local segs = { { "publisher", text = _("Publisher") }, { "left", icon = "align.left" }, { "justify", icon = "align.justify" } }
+        local sw = math.floor(cw / #segs)
+        local sh = t.touch
+        local sy = y + math.floor((row_h - sh) / 2)
+        for i, sg in ipairs(segs) do
+            local sx = cx + (i - 1) * sw
+            local on = values.spec.align == sg[1]
+            nodes[#nodes + 1] = { kind = "box", id = "q_align_" .. sg[1], x = sx, y = sy, w = sw, h = sh,
+                fill = on and "text" or "paper", border = "text", bw = t.hairline }
+            if sg.text then
+                -- smaller type when the word doesn't fit the segment (6" screens)
+                local style = textWidth(t, sg.text, "label") <= sw - t:space(2) and "label" or "caption"
+                textNode(nodes, t, { id = "q_align_text_" .. sg[1], x = sx + t:space(1), y = sy + math.floor((sh - t.type[style].line) / 2),
+                    w = sw - t:space(2), text = sg.text, style = style, align = "center", color = on and "paper" or "text" })
+            else
+                local ic = math.floor(t:mm(4.5))
+                nodes[#nodes + 1] = { kind = "icon", id = "q_align_icon_" .. sg[1], name = sg.icon, x = sx + math.floor((sw - ic) / 2),
+                    y = sy + math.floor((sh - ic) / 2), w = ic, h = ic, color = "text", invert = on }
+            end
+            tap(nodes, sx, sy, sw, sh, { type = "set", key = "align", value = sg[1] })
+        end
+        y = y + row_h + t:space(2)
+    end
+    table.insert(nodes, 1, { kind = "box", id = "sheet", x = 0, y = top, w = t.width, h = y - top, fill = "paper" })
+    nodes[#nodes + 1] = { kind = "rule", id = "sheet_edge", x = 0, y = y, w = t.width, h = t.rule, color = "text" }
+    return nodes, top, y + t.rule
+end
+
 --[[--
 @tparam table t sereno/ui/theme for the screen
 @tparam table values sereno/reader/layout.compute() result for the current spec (with .font)
@@ -301,6 +418,7 @@ function Panel.layout(t, values, _, opts)
     _ = _ or function(s) return s end
     opts = opts or {}
     local tab = opts.tab or "font"
+    if tab == "quick" then return Panel.quick(t, values, _, opts) end
     local nodes = {}
     local m = t.margin
     local w = t.width - 2 * m
@@ -333,7 +451,7 @@ function Panel.layout(t, values, _, opts)
     for _i, node in ipairs(nodes) do node.y = node.y + top end
     table.insert(nodes, 1, { kind = "box", id = "sheet", x = 0, y = top, w = t.width, h = panel_h, fill = "paper" })
     table.insert(nodes, 2, { kind = "rule", id = "sheet_edge", x = 0, y = top, w = t.width, h = t.rule, color = "text" })
-    return nodes, top
+    return nodes, top, t.height
 end
 
 --[[--

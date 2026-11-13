@@ -7,7 +7,13 @@
 - **Stats tab:** from KOReader's own Reading statistics: the book you're reading (days of reading, time read, progress, time left at your own pace), pages a day and time a day over the last week, days in a row, today's pages and time, the last seven days as bars, and all-time totals. Read-only; Sereno never writes to KOReader's database.
 - **Import tab:** books from calibre over Wi-Fi (KOReader's calibre plugin) and online catalogs (KOReader's OPDS browser: Project Gutenberg, Standard Ebooks, your calibre content server, catalogs you add).
 - **Send books from a browser, over Wi-Fi, without leaving KOReader:** the reader shows an address and a code; open it on a computer or phone on the same Wi-Fi and drop books in. A small upload server (`sereno/transfer/`) runs only while that screen is open, keeps the reader awake, opens and closes the Kindle's firewall port, accepts only e-book files and writes each one under a temporary name until it has arrived whole.
-- **By cable:** on a Kobo, KOReader's USB drive mode from the Import tab. On a Kindle, whose USB drive mode only works outside KOReader, Sereno explains the steps and closes KOReader for you.
+
+- **A home screen of tiles:** Continue reading, Library, Apps, Up next, Tasks, Weather and This week, under a status line and the date with settings, Apps and Import buttons. *Apps* shows every place in Sereno as tiles; *Tasks* is a short list you keep yourself; the weather comes from Open-Meteo only while Wi-Fi is already on.
+- **Bars in the book like a Kindle's:** *Back to My Books*, rotation, the light, **Aa**, settings and *…* at the top; *PAGE x OF y*, a slider with the page in its knob, chapter skips, the chapter, bookmarks and search at the bottom.
+- **Aa drops down under the top bar:** font face, sliders for size, line spacing and margins (nine steps), and justification (Publisher, left, justified). *Advanced* opens the full panel.
+
+### Removed
+- Import by cable: on a Kindle, Amazon's USB drive mode only starts once KOReader is closed, so it couldn't work from inside Sereno.
 
 ### Fixed (from testing 0.4 on a Kindle)
 - **Exit didn't leave KOReader.** KOReader quits once no window is open; its Exit closed the file manager but Sereno's home screen stayed open, so KOReader kept running. Sereno's windows now close with the file manager, and the quick controls have an *Exit* button.

@@ -612,7 +612,170 @@ function Sereno:homeSources()
         search = function(query) return Library.search(query, Browse.matches) end,
         reading_stats = function() return self:readingStats() end,
         import_items = function() return self:importItems() end,
+        dashboard = function() return self:dashboardData() end,
+        tasks = function() return self.settings:readSetting("tasks") or {} end,
     }
+end
+
+--[[--
+What the home tiles show besides books: your tasks, the weather (only
+fetched while Wi-Fi is already on) and this week's reading time.
+]]
+function Sereno:dashboardData()
+    local Weather = require("sereno/weather/weather")
+    local data = { tasks = self.settings:readSetting("tasks") or {} }
+    local saved = self.settings:readSetting("weather")
+    data.weather = Weather.display(saved, os.time(), _)
+    local ok, stats = pcall(self.readingStats, self)
+    if ok and stats and stats.week then
+        data.week, data.week_secs = {}, 0
+        for i, d in ipairs(stats.week) do
+            data.week[i] = { secs = d.secs, today = i == #stats.week }
+            data.week_secs = data.week_secs + (d.secs or 0)
+        end
+    end
+    if Device:hasWifiToggle() then
+        local NetworkMgr = require("ui/network/manager")
+        data.wifi = NetworkMgr:isWifiOn() and true or false
+        if data.wifi and Weather.due(saved, os.time()) then
+            -- after the screen is up, so the home screen never waits for the network
+            UIManager:scheduleIn(1, function() self:refreshWeather(false) end)
+        end
+    end
+    return data
+end
+
+local function httpGetShort(url)
+    local http = require("socket.http")
+    local ltn12 = require("ltn12")
+    local socket = require("socket")
+    local socketutil = require("socketutil")
+    local sink = {}
+    socketutil:set_timeout(4, 8)
+    local code = socket.skip(1, http.request({ url = url, method = "GET", sink = ltn12.sink.table(sink) }))
+    socketutil:reset_timeout()
+    if code ~= 200 then return nil, "HTTP " .. tostring(code) end
+    return table.concat(sink)
+end
+
+--- Updates the weather reading; `loud` reports failures (when you asked for it).
+function Sereno:refreshWeather(loud)
+    local Weather = require("sereno/weather/weather")
+    local saved = self.settings:readSetting("weather")
+    if not saved then return end
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isConnected() then
+        if loud then UIManager:show(InfoMessage:new{ text = _("Turn on Wi-Fi to see the weather."), timeout = 3 }) end
+        return
+    end
+    local ok, err = Weather.refresh(saved, os.time(), httpGetShort, require("json").decode)
+    self.settings:saveSetting("weather", saved)
+    self.settings:flush()
+    if ok then
+        if session.home then session.home:update() end
+    elseif loud then
+        UIManager:show(InfoMessage:new{ text = T(_("Couldn't get the weather (%1)."), tostring(err)), timeout = 3 })
+    end
+end
+
+--- The weather tile: choose a town, or update, change it, switch °C/°F, remove.
+function Sereno:weatherDialog()
+    local Weather = require("sereno/weather/weather")
+    local saved = self.settings:readSetting("weather")
+    local function ask()
+        local InputDialog = require("ui/widget/inputdialog")
+        local dialog
+        dialog = InputDialog:new{
+            title = _("Your town or city"),
+            input = saved and saved.name or "",
+            buttons = { {
+                { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+                { text = _("Find"), is_enter_default = true, callback = function()
+                    local name = dialog:getInputText()
+                    UIManager:close(dialog)
+                    if not name or name:match("^%s*$") then return end
+                    local NetworkMgr = require("ui/network/manager")
+                    NetworkMgr:runWhenOnline(function()
+                        local lang = (G_reader_settings:readSetting("language") or "en"):sub(1, 2)
+                        local place, err = Weather.find(name, httpGetShort, require("json").decode, lang, saved and saved.unit)
+                        if not place then
+                            UIManager:show(InfoMessage:new{ text = err == "not_found" and T(_("Couldn't find %1."), name)
+                                or T(_("Couldn't get the weather (%1)."), tostring(err)) })
+                            return
+                        end
+                        self.settings:saveSetting("weather", place)
+                        self:refreshWeather(true)
+                        if session.home then session.home:update() end
+                    end)
+                end },
+            } },
+        }
+        UIManager:show(dialog)
+        dialog:onShowKeyboard()
+    end
+    if not saved then return ask() end
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local dialog
+    local function item(text, fn)
+        return { { text = text, callback = function() UIManager:close(dialog) fn() end } }
+    end
+    dialog = ButtonDialog:new{
+        title = saved.name,
+        buttons = {
+            item(_("Update now"), function() self:refreshWeather(true) end),
+            item(_("Change town"), ask),
+            item(saved.unit == "F" and _("Show °C") or _("Show °F"), function()
+                saved.unit = saved.unit == "F" and "C" or "F"
+                saved.reading = nil
+                self.settings:saveSetting("weather", saved)
+                self:refreshWeather(true)
+                if session.home then session.home:update() end
+            end),
+            item(_("Remove the weather"), function()
+                self.settings:delSetting("weather")
+                if session.home then session.home:update() end
+            end),
+        },
+    }
+    UIManager:show(dialog)
+end
+
+--- Tasks: tick, add, delete, clear the ticked ones.
+function Sereno:taskAction(action, home)
+    local tasks = self.settings:readSetting("tasks") or {}
+    if action.type == "task_add" then
+        local InputDialog = require("ui/widget/inputdialog")
+        local dialog
+        dialog = InputDialog:new{
+            title = _("Add a task"),
+            buttons = { {
+                { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+                { text = _("Add"), is_enter_default = true, callback = function()
+                    local text = (dialog:getInputText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+                    UIManager:close(dialog)
+                    if text == "" then return end
+                    table.insert(tasks, 1, { text = text })
+                    self.settings:saveSetting("tasks", tasks)
+                    if home then home:update() end
+                end },
+            } },
+        }
+        UIManager:show(dialog)
+        dialog:onShowKeyboard()
+        return
+    elseif action.type == "task_toggle" and tasks[action.index] then
+        tasks[action.index].done = not tasks[action.index].done or nil
+    elseif action.type == "task_delete" and tasks[action.index] then
+        table.remove(tasks, action.index)
+    elseif action.type == "task_clear" then
+        local keep = {}
+        for _i, task in ipairs(tasks) do if not task.done then keep[#keep + 1] = task end end
+        tasks = keep
+    else
+        return
+    end
+    self.settings:saveSetting("tasks", tasks)
+    if home then home:update() end
 end
 
 --- Reading statistics, from KOReader's own statistics database.
@@ -638,21 +801,10 @@ function Sereno:importItems()
     local host = fm or self.ui
     local has_calibre = host and host.calibre ~= nil
     local has_opds = host and host.opds ~= nil
-    local folder = (Library.homeDir() or ""):match("([^/]+)/*$") or "documents"
-    local cable
-    if Device:canToggleMassStorage() then
-        cable = _("Turn the reader into a USB drive, copy books in, then eject.")
-    elseif Device:isKindle() then
-        cable = T(_("Kindle's USB drive works only outside KOReader: Sereno closes it, you copy books into %1, eject, and reopen KOReader."), folder)
-    else
-        cable = T(_("Copy books into %1 on your reader; they appear in the Library."), Library.homeDir())
-    end
     return {
         { id = "wifi_send", icon = "wifi", title = _("From a browser, over Wi-Fi"), available = self:canTransfer(),
           subtitle = self:canTransfer() and _("Drag books from your computer or phone into a page on the same Wi-Fi. KOReader stays open.")
               or _("This KOReader has no network module, so this isn't available here.") },
-        { id = "cable", icon = "appbar.filebrowser", title = _("With a cable"),
-          info = not (Device:canToggleMassStorage() or Device:isKindle()), subtitle = cable },
         { id = "calibre_connect", icon = "book.opened", title = _("Calibre, wirelessly"), available = has_calibre,
           subtitle = has_calibre and _("Send books from calibre on your computer: in calibre, Connect/share → Start wireless device connection, then tap here.")
               or _("Turn on KOReader's calibre plugin (Tools → Plugin management) to use this.") },
@@ -672,45 +824,13 @@ function Sereno:runImport(id, home)
     end
     if id == "wifi_send" then
         return self:showTransfer()
-    elseif id == "cable" then
-        return self:importByCable()
     elseif id == "calibre_connect" then
         if not (host and host.calibre) then return missing() end
         UIManager:broadcastEvent(Event:new("StartWirelessConnection"))
-    elseif id == "calibre_search" then
-        if not (host and host.calibre) then return missing() end
-        UIManager:broadcastEvent(Event:new("CalibreSearch"))
     elseif id == "opds" then
         if not (host and host.opds) then return missing() end
         if host.opds.onShowOPDSCatalog then host.opds:onShowOPDSCatalog() end
     end
-end
-
---[[--
-By cable. A Kobo (or Cervantes) becomes a USB drive from inside KOReader.
-A Kindle can't: its USB drive mode belongs to Amazon's software and only
-works once KOReader is closed, so Sereno says so and closes KOReader.
-]]
-function Sereno:importByCable()
-    if Device:canToggleMassStorage() then
-        UIManager:broadcastEvent(Event:new("RequestUSBMS"))
-        return
-    end
-    if not Device:isKindle() then return end
-    local ConfirmBox = require("ui/widget/confirmbox")
-    local folder = (Library.homeDir() or ""):match("([^/]+)/*$") or "documents"
-    UIManager:show(ConfirmBox:new{
-        text = T(_([[On a Kindle, the USB drive works only when KOReader is closed.
-
-1. Tap Close KOReader.
-2. Connect the cable: the Kindle shows up on your computer.
-3. Copy your books into the %1 folder.
-4. Eject the Kindle, unplug it, and open KOReader again (from KUAL or your launcher).
-
-The books will be in Sereno's Library. To stay in KOReader, use "From a browser, over Wi-Fi" instead.]]), folder),
-        ok_text = _("Close KOReader"),
-        ok_callback = function() self:exitKOReader() end,
-    })
 end
 
 --- 'Send over Wi-Fi' needs LuaSocket, which KOReader ships on every device.
@@ -928,6 +1048,22 @@ function Sereno:onHomeAction(action, home)
         return self:openBook(action.file)
     elseif action.type == "import" then
         return self:runImport(action.id, home)
+    elseif action.type:match("^task_") then
+        return self:taskAction(action, home)
+    elseif action.type == "weather" then
+        return self:weatherDialog()
+    elseif action.type == "settings" then
+        return self:showSettings()
+    elseif action.type == "controls" then
+        return self:showControls()
+    elseif action.type == "wifi" then
+        UIManager:broadcastEvent(Event:new("ToggleWifi"))
+        UIManager:scheduleIn(2, function() if session.home then session.home:update() end end)
+        return
+    elseif action.type == "refresh" then
+        if self.settings:readSetting("weather") then self:refreshWeather(false) end
+        if home then home:update() end
+        return
     elseif action.type == "search_input" then
         local InputDialog = require("ui/widget/inputdialog")
         local dialog
@@ -1142,12 +1278,14 @@ function Sereno:chromeState()
     end
     if session.back_page then state.back_label = T(_("Back to page %1"), session.back_label or session.back_page) end
     state.page = page
+    state.panel_open = session.panel ~= nil
     return state
 end
 
 function Sereno:chromeCopy()
     local locations = self.settings:readSetting("position") == "locations"
-    return { home = _("Home"), page_of = locations and _("Location %s of %s") or _("Page %s of %s") }
+    return { home = _("Back to My Books"), contents = _("Contents"),
+        page_of = locations and _("Location %s of %s") or _("Page %s of %s") }
 end
 
 Sereno.LOCATION_BYTES = 128
@@ -1227,7 +1365,14 @@ function Sereno:onChromeAction(action, ges, overlay)
     if t == "home" then
         later(function() self:leaveBook() end)
     elseif t == "panel" then
-        later(function() self:showPagePanel() end)
+        -- the Aa panel drops down under the top bar; the bars stay
+        if session.panel then session.panel:onClose() return true end
+        self:showPagePanel("quick", session.chrome_geo and session.chrome_geo.top_h)
+        return true
+    elseif t == "rotate" then
+        later(function() UIManager:broadcastEvent(Event:new("IterateRotation")) end)
+    elseif t == "more" then
+        later(function() self:showReaderMore() end)
     elseif t == "toc" then
         later(function() if ui.toc then ui.toc:onShowToc() end end)
     elseif t == "bookmarks" then
@@ -1271,13 +1416,17 @@ function Sereno:showChrome()
     overlay = Overlay:new{
         build_nodes = function(theme)
             local nodes, geo = ChromeLayout.layout(theme, self:chromeState(), self:chromeCopy())
+            session.chrome_geo = geo
             return nodes, {
                 { x = 0, y = 0, w = theme.width, h = geo.top_h },
                 { x = 0, y = geo.bottom_y - theme.touch * 2, w = theme.width, h = theme.height - geo.bottom_y + theme.touch * 2 },
             }
         end,
         on_action = function(action, ges, ov) return self:onChromeAction(action, ges, ov) end,
-        on_close = function() session.chrome = nil end,
+        on_close = function()
+            session.chrome = nil
+            if session.panel then session.panel:onClose() end
+        end,
         close_on_swipe = "north",
     }
     session.chrome = overlay
@@ -1288,6 +1437,28 @@ end
 function Sereno:onSerenoShowChrome()
     self:showChrome()
     return true
+end
+
+--- "…" in the reader's top bar: what doesn't need a button of its own.
+function Sereno:showReaderMore()
+    local ui = self.ui
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local dialog
+    local function item(text, fn)
+        return { { text = text, callback = function() UIManager:close(dialog) fn() end } }
+    end
+    local buttons = {
+        item(_("Go to page…"), function()
+            if ui.gotopage and ui.gotopage.onShowGotoDialog then ui.gotopage:onShowGotoDialog() end
+        end),
+        item(_("Bookmark this page"), function() if ui.bookmark then ui.bookmark:onToggleBookmark() end end),
+        item(_("Book details"), function()
+            if ui.document and ui.document.file then self:showMetrics(ui.document.file) end
+        end),
+        item(_("Quick controls"), function() self:showControls() end),
+    }
+    dialog = ButtonDialog:new{ buttons = buttons }
+    UIManager:show(dialog)
 end
 
 --- Book metrics
@@ -1714,11 +1885,11 @@ function Sereno:applyReadingLayout(values, changed)
         cfg.font_base_weight = values.weight or 0
         self.ui:handleEvent(Event:new("SetFontBaseWeight", values.weight or 0))
     end
-    if all or changed == "page" then
+    if all or changed == "page" or changed == "spacing" then
         self.ui:handleEvent(Event:new("SetLineSpace", values.line_spacing))
     end
     -- the margins follow the text size too, through the line-length cap
-    if all or changed == "pt" or changed == "page" or changed == "folio" then
+    if all or changed == "pt" or changed == "page" or changed == "margin" or changed == "folio" then
         -- all four margins in one re-layout; ReaderTypeset keeps the unscaled
         -- values it later edits one side at a time from
         local margins = { values.h_margins[1], values.t_margin, values.h_margins[2], values.b_margin }
@@ -1847,9 +2018,26 @@ function Sereno:onPanelAction(action, panel)
     elseif action.type == "set" then
         spec = ReaderLayout.with(spec, action.key, action.value)
         changed = action.key
+    elseif action.type == "step" then
+        -- the − and + beside the Aa panel's sliders
+        local now = ReaderLayout.compute(self:readerScreen(), spec)
+        local value
+        if action.key == "pt" then value = spec.pt + action.delta * ReaderLayout.STEP
+        elseif action.key == "spacing" then value = now.line_spacing + action.delta * ReaderLayout.LINE_SPACING_STEP
+        elseif action.key == "margin" then value = now.margin_level + action.delta
+        else return nil end
+        local before = ReaderLayout.spec(spec)
+        spec = ReaderLayout.with(spec, action.key, value)
+        local after = ReaderLayout.compute(self:readerScreen(), spec)
+        if after.font_size == now.font_size and after.line_spacing == now.line_spacing
+            and after.margin_level == now.margin_level and before.pt == spec.pt then
+            return nil
+        end
+        changed = action.key
     elseif action.type == "theme" then
         local theme = self:findTheme(action.id)
         if not theme then return nil end
+        spec.spacing, spec.margin = nil, nil
         for k, v in pairs(theme.spec) do spec[k] = v end
         spec = ReaderLayout.spec(spec)
         changed = nil
@@ -1978,7 +2166,7 @@ function Sereno:fontChoices()
 end
 
 --- The "Text" panel, like the Kindle's "Aa" panel: Themes, Font, Layout.
-function Sereno:showPagePanel()
+function Sereno:showPagePanel(tab, top)
     if not (self.ui.document and self.ui.rolling) then
         UIManager:show(InfoMessage:new{ text = _("Reading layouts apply to reflowable books (EPUB, FB2, MOBI…), not to PDF or comics.") })
         return
@@ -1986,9 +2174,23 @@ function Sereno:showPagePanel()
     local fonts, current = self:fontChoices()
     local values = ReaderLayout.compute(self:readerScreen(), self:currentSpec())
     values.font = values.font or current
-    local panel = PanelWidget:new{
+    local advanced = self.settings:readSetting("panel_tab", "font")
+    if advanced == "quick" then advanced = "font" end
+    -- from the bars, the Aa drop-down; elsewhere (gesture, menu), the full panel
+    if tab == "quick" and not top then tab = advanced end
+    local panel
+    panel = PanelWidget:new{
         values = values,
-        tab = self.settings:readSetting("panel_tab", "font"),
+        tab = tab or advanced,
+        advanced_tab = advanced,
+        top = top,
+        bottom_limit = top and session.chrome_geo and session.chrome_geo.bottom_y,
+        on_close = function()
+            if session.panel == panel then session.panel = nil end
+            if session.chrome then session.chrome:rebuild() end
+        end,
+        -- the book re-flowed: the bars' page numbers change too
+        on_redraw = function() if session.chrome then session.chrome:rebuild() end end,
         translate = _,
         opts = function()
             local file
@@ -1999,7 +2201,9 @@ function Sereno:showPagePanel()
         on_tab = function(tab) self.settings:saveSetting("panel_tab", tab) end,
         on_action = function(action, p) return self:onPanelAction(action, p) end,
     }
+    session.panel = panel
     UIManager:show(panel)
+    if session.chrome then session.chrome:rebuild() UIManager:setDirty(session.chrome, "ui") end
     return panel
 end
 
